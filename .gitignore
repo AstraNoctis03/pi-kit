@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+.env
+.env.*
+*.log
+*.tgz
+memory/tasks.db
+memory/tasks.db-*
+memory/*.db
+memory/*.db-journal
+memory/*.sqlite
+memory/*.sqlite3
