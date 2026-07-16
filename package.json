@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "validate:resources": "node scripts/validate-resources.mjs",
     "test:safety": "node scripts/test-safety-guard.js",
+    "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs",
     "validate": "npm run typecheck && npm run validate:resources"
   },
   "peerDependencies": {
@@ -25,7 +26,8 @@
       "./skills"
     ],
     "extensions": [
-      "./extensions/safety-guard/index.ts"
+      "./extensions/safety-guard/index.ts",
+      "./extensions/ssh-remote/index.ts"
     ]
   },
   "devDependencies": {

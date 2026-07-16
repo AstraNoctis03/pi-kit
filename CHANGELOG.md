@@ -1,5 +1,12 @@
 # 变更日志
 
+## Unreleased
+
+- 新增按 `--ssh alias:/remote/path` 启用的 SSH Remote 扩展。
+- 远程路由文件读写、编辑、Shell、搜索、目录列表和用户 `!` 命令。
+- SSH 连接使用 BatchMode、连接超时和 `ClearAllForwardings`，失败时不回退到本地工具。
+- 新增 SSH 参数、路径映射和 Shell 转义测试。
+
 ## v0.1.0 - 2026-07-14
 
 - 从 `omp-kit` 独立移植为原生 Pi package。

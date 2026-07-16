@@ -11,11 +11,16 @@ const requiredFiles = [
 	"extensions/safety-guard/dialog.ts",
 	"extensions/safety-guard/index.ts",
 	"extensions/safety-guard/policy.ts",
+	"extensions/ssh-remote/config.ts",
+	"extensions/ssh-remote/index.ts",
+	"extensions/ssh-remote/paths.ts",
+	"extensions/ssh-remote/transport.ts",
 	"skills/code-review/SKILL.md",
 	"skills/debugging/SKILL.md",
 ];
 const expectedSkills = ["code-review", "debugging"];
-const expectedExtensionFiles = ["dialog.ts", "index.ts", "policy.ts"];
+const expectedSafetyExtensionFiles = ["dialog.ts", "index.ts", "policy.ts"];
+const expectedSshExtensionFiles = ["config.ts", "index.ts", "paths.ts", "transport.ts"];
 
 function fail(message) {
 	throw new Error(message);
@@ -45,7 +50,10 @@ const pkg = JSON.parse(readText("package.json"));
 if (pkg.name !== "pi-kit" || pkg.private !== true) fail("无效的 package identity");
 if (!pkg.keywords?.includes("pi-package")) fail("keywords 必须包含 pi-package");
 if (JSON.stringify(pkg.pi?.skills) !== JSON.stringify(["./skills"])) fail("无效的 pi.skills manifest");
-if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify(["./extensions/safety-guard/index.ts"])) {
+if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
+	"./extensions/safety-guard/index.ts",
+	"./extensions/ssh-remote/index.ts",
+])) {
 	fail("无效的 pi.extensions manifest");
 }
 for (const dependency of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) {
@@ -61,9 +69,13 @@ for (const skill of expectedSkills) {
 	if (!description || description.length > 1024) fail(`无效的 skill description: ${path}`);
 }
 
-const extensionFiles = readdirSync(join("extensions", "safety-guard")).sort();
-if (JSON.stringify(extensionFiles) !== JSON.stringify(expectedExtensionFiles)) {
-	fail(`非预期的 extension 文件: ${extensionFiles.join(", ")}`);
+const safetyExtensionFiles = readdirSync(join("extensions", "safety-guard")).sort();
+if (JSON.stringify(safetyExtensionFiles) !== JSON.stringify(expectedSafetyExtensionFiles)) {
+	fail(`非预期的 safety extension 文件: ${safetyExtensionFiles.join(", ")}`);
+}
+const sshExtensionFiles = readdirSync(join("extensions", "ssh-remote")).sort();
+if (JSON.stringify(sshExtensionFiles) !== JSON.stringify(expectedSshExtensionFiles)) {
+	fail(`非预期的 ssh extension 文件: ${sshExtensionFiles.join(", ")}`);
 }
 
 console.log("validate:resources ok");
