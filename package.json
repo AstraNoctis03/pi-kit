@@ -2,7 +2,7 @@
   "name": "pi-kit",
   "version": "0.1.0",
   "private": true,
-  "description": "个人 Pi Coding Agent 配置包：安全扩展和精简开发工作流。",
+  "description": "个人 Pi Coding Agent 配置包：安全扩展、SSH 远程工作流和自定义 Footer。",
   "license": "MIT",
   "keywords": [
     "pi",
@@ -15,9 +15,13 @@
     "validate:resources": "node scripts/validate-resources.mjs",
     "test:safety": "node scripts/test-safety-guard.js",
     "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs",
+    "test:footer": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-custom-footer.mjs",
+    "test:workflow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-workflow-extensions.mjs",
+    "test:session-extensions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-session-extensions.mjs",
     "validate": "npm run typecheck && npm run validate:resources"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
   },
@@ -26,11 +30,18 @@
       "./skills"
     ],
     "extensions": [
+      "./extensions/presets/index.ts",
       "./extensions/safety-guard/index.ts",
-      "./extensions/ssh-remote/index.ts"
+      "./extensions/sensitive-paths/index.ts",
+      "./extensions/ssh-remote/index.ts",
+      "./extensions/dirty-repo-guard/index.ts",
+      "./extensions/custom-footer/index.ts",
+      "./extensions/handoff/index.ts",
+      "./extensions/titlebar-spinner/index.ts"
     ]
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^0.80.6",
     "@earendil-works/pi-coding-agent": "^0.80.6",
     "@earendil-works/pi-tui": "^0.80.6",
     "typescript": "^6.0.3"

@@ -6,6 +6,13 @@
 - 远程路由文件读写、编辑、Shell、搜索、目录列表和用户 `!` 命令。
 - SSH 连接使用 BatchMode、连接超时和 `ClearAllForwardings`，失败时不回退到本地工具。
 - 新增 SSH 参数、路径映射和 Shell 转义测试。
+- 新增两行 Custom Footer，突出本地/SSH 目标、Git 分支、模型、思考等级和上下文用量。
+- Footer 独立颜色支持 `#RRGGBB` 与 256 色配置；修改后使用 Pi 内置 `/reload` 重载。
+- 新增严格只读的 `review` Preset，支持 Git 只读、检查与测试命令，并在工具层阻止修改；支持全局/可信项目配置、CLI 参数和会话状态恢复。
+- 新增 Sensitive Paths，保护 Git 元数据、私钥、环境变量和凭据文件，并支持可扩展的 allow/block/confirm 规则。
+- 新增 Handoff，将长会话整理为可编辑的新会话启动提示。
+- 新增本地 Dirty Repo Guard，在会话切换、Fork 和 Clone 前检查未提交改动；SSH 模式直接跳过。
+- 新增 Titlebar Spinner，在 Agent 工作期间显示终端标题动画和当前目标。
 
 ## v0.1.0 - 2026-07-14
 

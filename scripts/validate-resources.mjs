@@ -8,19 +8,35 @@ const requiredFiles = [
 	"README.md",
 	"package.json",
 	"tsconfig.json",
+	"extensions/custom-footer/colors.ts",
+	"extensions/custom-footer/index.ts",
+	"extensions/dirty-repo-guard/index.ts",
+	"extensions/handoff/index.ts",
+	"extensions/presets/config.ts",
+	"extensions/presets/index.ts",
+	"extensions/presets/review-policy.ts",
 	"extensions/safety-guard/dialog.ts",
 	"extensions/safety-guard/index.ts",
 	"extensions/safety-guard/policy.ts",
+	"extensions/sensitive-paths/config.ts",
+	"extensions/sensitive-paths/index.ts",
 	"extensions/ssh-remote/config.ts",
 	"extensions/ssh-remote/index.ts",
 	"extensions/ssh-remote/paths.ts",
 	"extensions/ssh-remote/transport.ts",
+	"extensions/titlebar-spinner/index.ts",
 	"skills/code-review/SKILL.md",
 	"skills/debugging/SKILL.md",
 ];
 const expectedSkills = ["code-review", "debugging"];
+const expectedFooterExtensionFiles = ["colors.ts", "index.ts"];
+const expectedDirtyExtensionFiles = ["index.ts"];
+const expectedHandoffExtensionFiles = ["index.ts"];
+const expectedPresetExtensionFiles = ["config.ts", "index.ts", "review-policy.ts"];
 const expectedSafetyExtensionFiles = ["dialog.ts", "index.ts", "policy.ts"];
+const expectedSensitiveExtensionFiles = ["config.ts", "index.ts"];
 const expectedSshExtensionFiles = ["config.ts", "index.ts", "paths.ts", "transport.ts"];
+const expectedTitleExtensionFiles = ["index.ts"];
 
 function fail(message) {
 	throw new Error(message);
@@ -51,12 +67,18 @@ if (pkg.name !== "pi-kit" || pkg.private !== true) fail("无效的 package ident
 if (!pkg.keywords?.includes("pi-package")) fail("keywords 必须包含 pi-package");
 if (JSON.stringify(pkg.pi?.skills) !== JSON.stringify(["./skills"])) fail("无效的 pi.skills manifest");
 if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
+	"./extensions/presets/index.ts",
 	"./extensions/safety-guard/index.ts",
+	"./extensions/sensitive-paths/index.ts",
 	"./extensions/ssh-remote/index.ts",
+	"./extensions/dirty-repo-guard/index.ts",
+	"./extensions/custom-footer/index.ts",
+	"./extensions/handoff/index.ts",
+	"./extensions/titlebar-spinner/index.ts",
 ])) {
 	fail("无效的 pi.extensions manifest");
 }
-for (const dependency of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) {
+for (const dependency of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) {
 	if (pkg.peerDependencies?.[dependency] !== "*") fail(`缺少 peer dependency: ${dependency}`);
 }
 
@@ -69,13 +91,37 @@ for (const skill of expectedSkills) {
 	if (!description || description.length > 1024) fail(`无效的 skill description: ${path}`);
 }
 
+const dirtyExtensionFiles = readdirSync(join("extensions", "dirty-repo-guard")).sort();
+if (JSON.stringify(dirtyExtensionFiles) !== JSON.stringify(expectedDirtyExtensionFiles)) {
+	fail(`非预期的 dirty guard extension 文件: ${dirtyExtensionFiles.join(", ")}`);
+}
+const footerExtensionFiles = readdirSync(join("extensions", "custom-footer")).sort();
+if (JSON.stringify(footerExtensionFiles) !== JSON.stringify(expectedFooterExtensionFiles)) {
+	fail(`非预期的 footer extension 文件: ${footerExtensionFiles.join(", ")}`);
+}
+const handoffExtensionFiles = readdirSync(join("extensions", "handoff")).sort();
+if (JSON.stringify(handoffExtensionFiles) !== JSON.stringify(expectedHandoffExtensionFiles)) {
+	fail(`非预期的 handoff extension 文件: ${handoffExtensionFiles.join(", ")}`);
+}
+const presetExtensionFiles = readdirSync(join("extensions", "presets")).sort();
+if (JSON.stringify(presetExtensionFiles) !== JSON.stringify(expectedPresetExtensionFiles)) {
+	fail(`非预期的 preset extension 文件: ${presetExtensionFiles.join(", ")}`);
+}
 const safetyExtensionFiles = readdirSync(join("extensions", "safety-guard")).sort();
 if (JSON.stringify(safetyExtensionFiles) !== JSON.stringify(expectedSafetyExtensionFiles)) {
 	fail(`非预期的 safety extension 文件: ${safetyExtensionFiles.join(", ")}`);
 }
+const sensitiveExtensionFiles = readdirSync(join("extensions", "sensitive-paths")).sort();
+if (JSON.stringify(sensitiveExtensionFiles) !== JSON.stringify(expectedSensitiveExtensionFiles)) {
+	fail(`非预期的 sensitive extension 文件: ${sensitiveExtensionFiles.join(", ")}`);
+}
 const sshExtensionFiles = readdirSync(join("extensions", "ssh-remote")).sort();
 if (JSON.stringify(sshExtensionFiles) !== JSON.stringify(expectedSshExtensionFiles)) {
 	fail(`非预期的 ssh extension 文件: ${sshExtensionFiles.join(", ")}`);
+}
+const titleExtensionFiles = readdirSync(join("extensions", "titlebar-spinner")).sort();
+if (JSON.stringify(titleExtensionFiles) !== JSON.stringify(expectedTitleExtensionFiles)) {
+	fail(`非预期的 title extension 文件: ${titleExtensionFiles.join(", ")}`);
 }
 
 console.log("validate:resources ok");

@@ -22,6 +22,12 @@ class SafetyDialog implements Focusable {
 	private readonly container = new Container();
 	private readonly input = new Input();
 	private readonly list: SelectList;
+	private readonly tui: TUI;
+	private readonly theme: Theme;
+	private readonly title: string;
+	private readonly reason: string;
+	private readonly subject: string;
+	private readonly done: (result: SafetyConfirmationResult) => void;
 	private mode: "select" | "input" = "select";
 	private _focused = false;
 
@@ -34,12 +40,19 @@ class SafetyDialog implements Focusable {
 	}
 
 	constructor(
-		private readonly tui: TUI,
-		private readonly theme: Theme,
-		private readonly reason: string,
-		private readonly subject: string,
-		private readonly done: (result: SafetyConfirmationResult) => void,
+		tui: TUI,
+		theme: Theme,
+		title: string,
+		reason: string,
+		subject: string,
+		done: (result: SafetyConfirmationResult) => void,
 	) {
+		this.tui = tui;
+		this.theme = theme;
+		this.title = title;
+		this.reason = reason;
+		this.subject = subject;
+		this.done = done;
 		const items: SelectItem[] = [
 			{ value: YES, label: "Yes" },
 			{ value: NO, label: "No" },
@@ -101,7 +114,7 @@ class SafetyDialog implements Focusable {
 
 		this.container.clear();
 		this.container.addChild(border());
-		this.container.addChild(new Text(this.theme.fg("warning", this.theme.bold("Safety confirmation")), 1, 0));
+		this.container.addChild(new Text(this.theme.fg("warning", this.theme.bold(this.title)), 1, 0));
 		this.container.addChild(new Text(this.theme.fg("muted", this.reason), 1, 1));
 		this.container.addChild(new Text(this.theme.fg("dim", label), 1, 0));
 		this.container.addChild(new Text(this.theme.fg("text", value), 1, 1));
@@ -122,17 +135,26 @@ class SafetyDialog implements Focusable {
 	}
 }
 
-export async function showSafetyConfirmation(
+export async function showThemedConfirmation(
 	ctx: ExtensionContext,
+	title: string,
 	reason: string,
 	subject: string,
 ): Promise<SafetyConfirmationResult> {
 	if (!ctx.hasUI) return { allowed: false };
 	if (ctx.mode !== "tui") {
-		const allowed = await ctx.ui.confirm("Safety confirmation", `${reason}\n\n${subject}`);
+		const allowed = await ctx.ui.confirm(title, `${reason}\n\n${subject}`);
 		return { allowed };
 	}
 
 	return ctx.ui.custom<SafetyConfirmationResult>((tui, theme, _keybindings, done) =>
-		new SafetyDialog(tui, theme, reason, subject, done));
+		new SafetyDialog(tui, theme, title, reason, subject, done));
+}
+
+export function showSafetyConfirmation(
+	ctx: ExtensionContext,
+	reason: string,
+	subject: string,
+): Promise<SafetyConfirmationResult> {
+	return showThemedConfirmation(ctx, "Safety confirmation", reason, subject);
 }
