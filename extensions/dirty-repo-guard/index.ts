@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { showThemedConfirmation } from "../safety-guard/dialog.ts";
@@ -12,7 +12,19 @@ interface RepoStatus {
 function hasGitMarker(cwd: string): boolean {
 	let current = path.resolve(cwd);
 	while (true) {
-		if (existsSync(path.join(current, ".git"))) return true;
+		const marker = path.join(current, ".git");
+		if (existsSync(marker)) {
+			try {
+				const stats = statSync(marker);
+				if (stats.isDirectory()) {
+					if (readdirSync(marker).length > 0) return true;
+				} else if (!stats.isFile() || readFileSync(marker, "utf8").trim()) {
+					return true;
+				}
+			} catch {
+				return true;
+			}
+		}
 		const parent = path.dirname(current);
 		if (parent === current) return false;
 		current = parent;

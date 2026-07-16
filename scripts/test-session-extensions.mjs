@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import dirtyRepoGuard from "../extensions/dirty-repo-guard/index.ts";
 import { handoffMessages } from "../extensions/handoff/index.ts";
@@ -84,6 +86,17 @@ assert.equal(
 	undefined,
 	"Directories with no Git marker in their ancestry should remain allowed",
 );
+const emptyMarkerRoot = mkdtempSync(path.join(tmpdir(), "pi-kit-empty-git-"));
+try {
+	mkdirSync(path.join(emptyMarkerRoot, ".git"));
+	assert.equal(
+		await localHandlers.get("session_before_switch")[0]({ reason: "new" }, { ...ctx, cwd: emptyMarkerRoot }),
+		undefined,
+		"Empty .git directories must not be treated as damaged repositories",
+	);
+} finally {
+	rmSync(emptyMarkerRoot, { recursive: true, force: true });
+}
 localResult = { code: 1, stdout: "", stderr: "", killed: true };
 assert.deepEqual(
 	await localHandlers.get("session_before_switch")[0]({ reason: "new" }, { ...ctx, cwd: nonRepoRoot }),
