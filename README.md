@@ -6,6 +6,7 @@
 - **Sensitive Paths**：阻止直接修改 Git 元数据和私钥，并在写入环境变量、凭据及 secrets 文件前确认
 - **SSH Remote**：按需将 `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` 和 `!` 命令路由到 SSH 服务器
 - **Exa Search**：通过本地只读 `exa_search` 工具检索最新网页信息，在 SSH 与 Review 模式下仍可使用
+- **Tokyo Night Theme**：统一原生对话、Handoff、工具区域、Markdown、输入框与扩展界面的配色
 - **Custom Footer**：突出显示本地/SSH 目标、Git 分支、模型、思考等级和上下文用量，并支持独立配色
 - **Presets**：提供严格只读的 `review` 工作流，统一限制工具、Shell 命令和提示指令
 - **Handoff**：将长会话压缩为可编辑的新会话启动提示
@@ -22,10 +23,10 @@
 pi install /absolute/path/to/pi-kit
 ```
 
-GitHub 发布后：
+GitHub（建议固定版本）：
 
 ```bash
-pi install git:github.com/AstraNoctis03/pi-kit
+pi install git:github.com/AstraNoctis03/pi-kit@v0.2.0
 ```
 
 临时测试：
@@ -52,7 +53,7 @@ pi --no-extensions --no-skills \
 
 普通文件编辑、测试、lint、build、Git 只读命令，以及原生 Windows 中的项目文件修改不会触发确认。
 
-Safety Guard、Sensitive Paths 和 Dirty Repo Guard 共享主题化确认框，默认选中 `No`。边框、标题和当前选项使用可配置的自定义强调色；正文仍使用 Pi Theme 以保证可读性。配置文件：
+Safety Guard、Sensitive Paths 和 Dirty Repo Guard 共享主题化确认框，默认选中 `Yes`。边框、标题和当前选项使用可配置的自定义强调色；正文仍使用 Pi Theme 以保证可读性。配置文件：
 
 ```text
 ~/.pi/agent/confirmation-colors.json
@@ -201,6 +202,16 @@ Handoff 会使用当前模型总结相关上下文，允许编辑生成结果，
 
 检查会在 Session 操作前自动执行；非 Git 目录不会阻止会话操作。本地状态可直接使用 `git status` 查看。
 
+## Tokyo Night Theme
+
+Pi package 提供 `pi-kit-tokyo-night` 主题，统一原生 User/Assistant 消息、Handoff Loader、工具状态、Markdown、代码高亮、输入框和思考等级边框。通过 `/settings` 选择：
+
+```text
+Theme: pi-kit-tokyo-night
+```
+
+普通工作流使用蓝色边框与青色强调；成功、警告和错误继续使用绿、金、红。Safety Guard 确认框保留橙色边框与金色标题，以区别普通操作和风险确认。直接修改 `themes/pi-kit-tokyo-night.json` 时，Pi 会自动热重载当前主题。
+
 ## Custom Footer
 
 Footer 使用两行布局：
@@ -265,6 +276,7 @@ Pi package 不会自动加载仓库根目录的 `AGENTS.md`。已有全局规则
 
 ```text
 pi-kit/
+├── .github/workflows/ci.yml
 ├── AGENTS.md
 ├── extensions/
 │   ├── custom-footer/
@@ -279,6 +291,8 @@ pi-kit/
 ├── skills/
 │   ├── code-review/SKILL.md
 │   └── debugging/SKILL.md
+├── themes/
+│   └── pi-kit-tokyo-night.json
 ├── scripts/
 └── package.json
 ```
@@ -286,15 +300,13 @@ pi-kit/
 ## 验证
 
 ```bash
-npm install
+npm ci
 npm run validate
-npm run test:safety
-npm run test:ssh
-npm run test:exa
-npm run test:footer
-npm run test:workflow
-npm run test:session-extensions
+npm test
+git diff --check
 ```
+
+GitHub Actions 使用 Node.js 24，在 Push 与 Pull Request 中自动运行同一套检查。
 
 ## License
 

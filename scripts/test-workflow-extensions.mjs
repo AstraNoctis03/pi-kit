@@ -100,10 +100,10 @@ const safetyDialog = new SafetyDialog(
 	(result) => { safetyDialogResult = result; },
 );
 const safetyDialogOutput = safetyDialog.render(80).join("\n");
-assert.match(safetyDialogOutput, /\[bold\]→ No\[\/\]/, "The default selection should have non-color emphasis");
+assert.match(safetyDialogOutput, /\[bold\]→ Yes\[\/\]/, "The default selection should have non-color emphasis");
 assert.match(safetyDialogOutput, /\[muted\]↑↓ choose/, "Safety shortcuts should remain readable");
 safetyDialog.handleInput("\r");
-assert.deepEqual(safetyDialogResult, { allowed: false }, "The shared confirmation must default to No");
+assert.deepEqual(safetyDialogResult, { allowed: true }, "The shared confirmation must default to Yes");
 
 function createPiMock() {
 	const handlers = new Map();

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import dirtyRepoGuard from "../extensions/dirty-repo-guard/index.ts";
-import { handoffMessages, handoffSessionName } from "../extensions/handoff/index.ts";
+import handoffExtension, { handoffMessages, handoffSessionName } from "../extensions/handoff/index.ts";
 import { titleTarget } from "../extensions/titlebar-spinner/index.ts";
 
 const compacted = handoffMessages([
@@ -18,6 +18,58 @@ assert.equal(handoffSessionName("  继续实现下一阶段\n并运行测试  ")
 const longHandoffName = handoffSessionName("a".repeat(80));
 assert.equal([...longHandoffName].length, 60);
 assert.equal(longHandoffName.endsWith("…"), true);
+
+const handoffCommands = new Map();
+handoffExtension({
+	registerCommand(name, command) { handoffCommands.set(name, command); },
+});
+const handoffNotifications = [];
+let handoffSessionNameWritten;
+let handoffEditorText;
+let newSessionCalls = 0;
+const handoffCtx = {
+	mode: "tui",
+	model: { provider: "test", id: "test-model" },
+	sessionManager: {
+		getBranch: () => [{
+			id: "message-1",
+			type: "message",
+			message: { role: "user", content: "Existing context", timestamp: Date.now() },
+		}],
+		getSessionFile: () => "parent-session.jsonl",
+	},
+	ui: {
+		custom: async () => "## Context\nGenerated handoff",
+		editor: async (title, draft) => {
+			assert.equal(title, "Review handoff prompt");
+			assert.match(draft, /Generated handoff/);
+			return `${draft}\n\n## Task\nEdited task`;
+		},
+		notify(message, level) { handoffNotifications.push({ message, level }); },
+	},
+	async newSession(options) {
+		newSessionCalls += 1;
+		assert.equal(options.parentSession, "parent-session.jsonl");
+		await options.setup({ appendSessionInfo(name) { handoffSessionNameWritten = name; } });
+		await options.withSession({
+			ui: {
+				setEditorText(text) { handoffEditorText = text; },
+				notify(message, level) { handoffNotifications.push({ message, level }); },
+			},
+		});
+		return { cancelled: false };
+	},
+};
+await handoffCommands.get("handoff").handler("  Continue release validation  ", handoffCtx);
+assert.equal(newSessionCalls, 1);
+assert.equal(handoffSessionNameWritten, "Continue release validation");
+assert.match(handoffEditorText, /Edited task/);
+assert.ok(handoffNotifications.some(({ message }) => message.startsWith("Handoff ready")));
+
+handoffCtx.ui.editor = async () => undefined;
+await handoffCommands.get("handoff").handler("cancelled handoff", handoffCtx);
+assert.equal(newSessionCalls, 1, "Cancelling the handoff editor must not create a session");
+assert.ok(handoffNotifications.some(({ message }) => message === "Handoff cancelled"));
 
 assert.equal(
 	titleTarget({ getFlag: () => "s1d:/home/xjmao/project" }, { cwd: "C:/local" }),

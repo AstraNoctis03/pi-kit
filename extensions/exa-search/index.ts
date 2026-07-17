@@ -114,6 +114,7 @@ export async function runExaSearch(
 	apiKey: string,
 	signal?: AbortSignal,
 	fetchImpl: FetchImplementation = fetch,
+	timeoutMs = EXA_TIMEOUT_MS,
 ): Promise<ExaSearchRunResult> {
 	const key = apiKey.trim();
 	if (!key) throw new Error("Exa Search requires EXA_API_KEY in the Pi process environment.");
@@ -123,7 +124,7 @@ export async function runExaSearch(
 	const onAbort = () => controller.abort(signal?.reason);
 	if (signal?.aborted) onAbort();
 	else signal?.addEventListener("abort", onAbort, { once: true });
-	const timeout = setTimeout(() => controller.abort(new Error("Exa Search request timed out.")), EXA_TIMEOUT_MS);
+	const timeout = setTimeout(() => controller.abort(new Error("Exa Search request timed out.")), timeoutMs);
 
 	const contents: Record<string, unknown> = { highlights: true };
 	if (input.maxAgeHours !== undefined) contents.maxAgeHours = input.maxAgeHours;

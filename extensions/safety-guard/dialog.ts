@@ -74,7 +74,7 @@ export class SafetyDialog implements Focusable {
 			scrollInfo: (text) => theme.fg("dim", text),
 			noMatch: (text) => theme.fg("warning", text),
 		});
-		this.list.setSelectedIndex(1);
+		this.list.setSelectedIndex(0);
 		this.list.onSelect = (item) => this.done({ allowed: item.value === YES });
 		this.list.onCancel = () => this.done({ allowed: false });
 		this.list.onSelectionChange = () => this.rebuild();

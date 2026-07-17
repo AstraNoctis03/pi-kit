@@ -76,6 +76,37 @@ await assert.rejects(
 	/invalid JSON/,
 );
 
+const abortableFetch = async (_url, init) => new Promise((_resolve, reject) => {
+	const rejectAbort = () => reject(init.signal.reason ?? new Error("aborted"));
+	if (init.signal.aborted) rejectAbort();
+	else init.signal.addEventListener("abort", rejectAbort, { once: true });
+});
+const externalAbort = new AbortController();
+const cancelledSearch = runExaSearch({ query: "cancel me" }, "test-key", externalAbort.signal, abortableFetch, 1_000);
+externalAbort.abort();
+await assert.rejects(cancelledSearch, /cancelled/);
+await assert.rejects(
+	() => runExaSearch({ query: "timeout" }, "test-key", undefined, abortableFetch, 5),
+	/timed out/,
+);
+
+const largeHighlight = "external result ".repeat(150);
+const largeResult = await runExaSearch(
+	{ query: "large response" },
+	"test-key",
+	undefined,
+	async () => new Response(JSON.stringify({
+		results: Array.from({ length: 30 }, (_, index) => ({
+			title: `Result ${index}`,
+			url: `https://example.com/${index}`,
+			highlights: [largeHighlight, largeHighlight, largeHighlight],
+		})),
+	}), { status: 200 }),
+);
+assert.equal(largeResult.details.truncated, true);
+assert.match(largeResult.text, /Output truncated/);
+assert.ok(Buffer.byteLength(largeResult.text, "utf8") < 52 * 1_024);
+
 const tools = new Map();
 exaSearchExtension({ registerTool(tool) { tools.set(tool.name, tool); } });
 assert.equal(tools.has("exa_search"), true);

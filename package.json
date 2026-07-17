@@ -1,8 +1,8 @@
 {
   "name": "pi-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "个人 Pi Coding Agent 配置包：安全扩展、SSH 远程工作流、Exa 搜索和自定义 Footer。",
+  "description": "个人 Pi Coding Agent 配置包：安全扩展、SSH 远程工作流、Exa 搜索和 Tokyo Night 界面。",
   "license": "MIT",
   "keywords": [
     "pi",
@@ -13,12 +13,14 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "validate:resources": "node scripts/validate-resources.mjs",
+    "test": "npm run test:safety && npm run test:ssh && npm run test:exa && npm run test:footer && npm run test:workflow && npm run test:session-extensions && npm run test:theme",
     "test:safety": "node scripts/test-safety-guard.js",
     "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs",
     "test:exa": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-exa-search.mjs",
     "test:footer": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-custom-footer.mjs",
     "test:workflow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-workflow-extensions.mjs",
     "test:session-extensions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-session-extensions.mjs",
+    "test:theme": "node scripts/test-theme.mjs",
     "validate": "npm run typecheck && npm run validate:resources"
   },
   "peerDependencies": {
@@ -30,6 +32,9 @@
   "pi": {
     "skills": [
       "./skills"
+    ],
+    "themes": [
+      "./themes/pi-kit-tokyo-night.json"
     ],
     "extensions": [
       "./extensions/exa-search/index.ts",

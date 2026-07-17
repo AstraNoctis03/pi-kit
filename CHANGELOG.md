@@ -2,19 +2,24 @@
 
 ## Unreleased
 
+## v0.2.0 - 2026-07-17
+
 - 新增按 `--ssh alias:/remote/path` 启用的 SSH Remote 扩展。
 - 远程路由文件读写、编辑、Shell、搜索、目录列表和用户 `!` 命令。
 - SSH 连接使用 BatchMode、连接超时和 `ClearAllForwardings`，失败时不回退到本地工具。
 - 新增 SSH 参数、路径映射和 Shell 转义测试。
 - 新增两行 Custom Footer，突出本地/SSH 目标、Git 分支、模型、思考等级和上下文用量。
+- 新增 `pi-kit-tokyo-night` 主题，统一原生对话、Handoff、工具区域、Markdown、输入框和扩展界面的视觉语言。
 - Footer 独立颜色支持 `#RRGGBB` 与 256 色配置，默认模型与推理等级采用协调的 Tokyo Night 配色；修改后使用 Pi 内置 `/reload` 重载。
 - 新增严格只读的 `review` Preset，支持 Git 只读、检查与测试命令，并在工具层阻止修改；支持全局/可信项目配置、CLI 参数和会话状态恢复。
 - 新增 Sensitive Paths，保护 Git 元数据、私钥、环境变量和凭据文件，并支持可扩展的 allow/block/confirm 规则。
 - 新增 Handoff，将长会话整理为可编辑的新会话启动提示，并根据下一阶段目标自动命名新 Session。
 - 新增本地 Dirty Repo Guard，在会话切换、Fork 和 Clone 前检查未提交改动；SSH 模式直接跳过。
 - 新增本地只读 `exa_search` 工具，通过 Exa API 返回带来源和费用的网页搜索结果，并支持 Review 与 SSH 模式。
-- 共享主题化确认框改为默认选中 `No`，支持可配置的自定义边框、标题与选中项颜色，并保留主题化正文。
+- 共享主题化确认框默认选中 `Yes`，支持可配置的自定义边框、标题与选中项颜色，并保留主题化正文。
 - 新增 Titlebar Spinner，在 Agent 工作期间显示终端标题动画和当前目标。
+- 新增基于 Node.js 24 的 GitHub Actions CI，在 Push 与 Pull Request 中运行资源、类型、完整测试和 Patch 空白检查。
+- 补充 Exa 取消、超时和大输出截断，Handoff 创建与取消，以及官方 Theme Loader 的边界测试。
 
 ## v0.1.0 - 2026-07-14
 

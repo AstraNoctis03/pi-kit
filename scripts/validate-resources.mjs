@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const requiredFiles = [
+	".github/workflows/ci.yml",
 	"AGENTS.md",
 	"CHANGELOG.md",
 	"LICENSE",
@@ -27,10 +28,22 @@ const requiredFiles = [
 	"extensions/ssh-remote/paths.ts",
 	"extensions/ssh-remote/transport.ts",
 	"extensions/titlebar-spinner/index.ts",
+	"scripts/test-theme.mjs",
+	"themes/pi-kit-tokyo-night.json",
 	"skills/code-review/SKILL.md",
 	"skills/debugging/SKILL.md",
 ];
 const expectedSkills = ["code-review", "debugging"];
+const expectedThemeFiles = ["pi-kit-tokyo-night.json"];
+const requiredThemeColors = [
+	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text", "thinkingText",
+	"selectedBg", "userMessageBg", "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel",
+	"toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
+	"mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
+	"toolDiffAdded", "toolDiffRemoved", "toolDiffContext",
+	"syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
+	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+].sort();
 const expectedFooterExtensionFiles = ["colors.ts", "index.ts"];
 const expectedDirtyExtensionFiles = ["index.ts"];
 const expectedExaExtensionFiles = ["index.ts"];
@@ -69,6 +82,7 @@ const pkg = JSON.parse(readText("package.json"));
 if (pkg.name !== "pi-kit" || pkg.private !== true) fail("无效的 package identity");
 if (!pkg.keywords?.includes("pi-package")) fail("keywords 必须包含 pi-package");
 if (JSON.stringify(pkg.pi?.skills) !== JSON.stringify(["./skills"])) fail("无效的 pi.skills manifest");
+if (JSON.stringify(pkg.pi?.themes) !== JSON.stringify(["./themes/pi-kit-tokyo-night.json"])) fail("无效的 pi.themes manifest");
 if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
 	"./extensions/exa-search/index.ts",
 	"./extensions/presets/index.ts",
@@ -84,6 +98,15 @@ if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
 }
 for (const dependency of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]) {
 	if (pkg.peerDependencies?.[dependency] !== "*") fail(`缺少 peer dependency: ${dependency}`);
+}
+
+const themeFiles = readdirSync("themes").sort();
+if (JSON.stringify(themeFiles) !== JSON.stringify(expectedThemeFiles)) fail(`非预期的 themes: ${themeFiles.join(", ")}`);
+for (const filename of expectedThemeFiles) {
+	const theme = JSON.parse(readText(join("themes", filename)));
+	if (theme.name !== filename.replace(/\.json$/, "")) fail(`Theme 名称与文件名不一致: ${filename}`);
+	const colors = Object.keys(theme.colors ?? {}).sort();
+	if (JSON.stringify(colors) !== JSON.stringify(requiredThemeColors)) fail(`Theme 颜色 Token 不完整: ${filename}`);
 }
 
 const skillDirs = readdirSync("skills").filter((entry) => statSync(join("skills", entry)).isDirectory()).sort();
