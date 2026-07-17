@@ -7,7 +7,7 @@ const codingAgentEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-c
 const themeModulePath = resolve(dirname(codingAgentEntry), "modes", "interactive", "theme", "theme.js");
 const { loadThemeFromPath } = await import(pathToFileURL(themeModulePath));
 const themePath = resolve("themes", "pi-kit-tokyo-night.json");
-const theme = loadThemeFromPath(themePath);
+const theme = loadThemeFromPath(themePath, "truecolor");
 
 assert.equal(theme.name, "pi-kit-tokyo-night");
 assert.equal(theme.getColorMode(), "truecolor");
