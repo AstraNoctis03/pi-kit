@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI 仅在 main Push 与 Pull Request 运行，避免发布 Tag 重复执行同一套检查。
+
 ## v0.2.0 - 2026-07-17
 
 - 新增按 `--ssh alias:/remote/path` 启用的 SSH Remote 扩展。
