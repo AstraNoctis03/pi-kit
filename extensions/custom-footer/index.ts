@@ -91,7 +91,7 @@ function formatLocalPath(cwd: string): string {
 }
 
 function alignColumns(left: string, right: string, width: number): string {
-	if (!right) return truncateToWidth(left, width, "...");
+	if (!right || width < 20) return truncateToWidth(left, width, "...");
 	const maxRightWidth = Math.max(10, Math.floor(width * 0.45));
 	const compactRight = truncateToWidth(right, maxRightWidth, "");
 	const rightWidth = visibleWidth(compactRight);
@@ -117,13 +117,15 @@ function targetColumns(
 		left = `${paint(theme, colors.context.error, "SSH!")} ${paint(theme, colors.path, sshStatus.slice(12))}`;
 	} else {
 		const branch = footerData.getGitBranch();
-		left = `${theme.fg("muted", "LOCAL")} ${paint(theme, colors.path, formatLocalPath(ctx.sessionManager.getCwd()))}`;
+		left = `${paint(theme, colors.local, "LOCAL")} ${paint(theme, colors.path, formatLocalPath(ctx.sessionManager.getCwd()))}`;
 		if (branch) left += ` ${paint(theme, colors.branch, `(${branch})`)}`;
 	}
-	const sessionName = ctx.sessionManager.getSessionName();
-	if (sessionName) left += theme.fg("muted", ` • ${sanitize(stripAnsi(sessionName))}`);
 	const rawPresetStatus = footerData.getExtensionStatuses().get("preset");
 	if (rawPresetStatus) left += ` ${theme.fg("dim", "•")} ${theme.fg("accent", sanitize(stripAnsi(rawPresetStatus)))}`;
+	const sessionName = ctx.sessionManager.getSessionName();
+	if (sessionName) {
+		left += ` ${theme.fg("dim", "•")} ${paint(theme, colors.session, sanitize(stripAnsi(sessionName)))}`;
+	}
 
 	const modelName = ctx.model?.id ?? "no-model";
 	let right = paint(theme, colors.model, modelName);

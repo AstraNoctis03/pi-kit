@@ -25,6 +25,12 @@ Use this format:
 
 Return only the prompt, without a preamble.`;
 
+export function handoffSessionName(goal: string): string {
+	const normalized = goal.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+	const characters = [...normalized];
+	return characters.length <= 60 ? normalized : `${characters.slice(0, 59).join("")}…`;
+}
+
 function entryToMessage(entry: SessionEntry) {
 	if (entry.type === "message") return entry.message;
 	if (entry.type === "compaction") {
@@ -129,6 +135,9 @@ export default function handoffExtension(pi: ExtensionAPI): void {
 			}
 			const result = await ctx.newSession({
 				parentSession: currentSessionFile,
+				setup: async (sessionManager) => {
+					sessionManager.appendSessionInfo(handoffSessionName(goal));
+				},
 				withSession: async (replacementCtx) => {
 					replacementCtx.ui.setEditorText(edited);
 					replacementCtx.ui.notify("Handoff ready; review and submit the prompt.", "info");

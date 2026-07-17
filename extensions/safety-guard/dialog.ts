@@ -9,6 +9,12 @@ import {
 	Text,
 	type TUI,
 } from "@earendil-works/pi-tui";
+import {
+	DEFAULT_CONFIRMATION_COLORS,
+	loadConfirmationColors,
+	paintConfirmationColor,
+	type ConfirmationColors,
+} from "./dialog-colors.ts";
 
 export interface SafetyConfirmationResult {
 	allowed: boolean;
@@ -17,8 +23,9 @@ export interface SafetyConfirmationResult {
 
 const YES = "yes";
 const NO = "no";
+let reportedColorError: string | undefined;
 
-class SafetyDialog implements Focusable {
+export class SafetyDialog implements Focusable {
 	private readonly container = new Container();
 	private readonly input = new Input();
 	private readonly list: SelectList;
@@ -28,6 +35,7 @@ class SafetyDialog implements Focusable {
 	private readonly reason: string;
 	private readonly subject: string;
 	private readonly done: (result: SafetyConfirmationResult) => void;
+	private readonly colors: ConfirmationColors;
 	private mode: "select" | "input" = "select";
 	private _focused = false;
 
@@ -46,6 +54,7 @@ class SafetyDialog implements Focusable {
 		reason: string,
 		subject: string,
 		done: (result: SafetyConfirmationResult) => void,
+		colors: ConfirmationColors = DEFAULT_CONFIRMATION_COLORS,
 	) {
 		this.tui = tui;
 		this.theme = theme;
@@ -53,17 +62,19 @@ class SafetyDialog implements Focusable {
 		this.reason = reason;
 		this.subject = subject;
 		this.done = done;
+		this.colors = colors;
 		const items: SelectItem[] = [
 			{ value: YES, label: "Yes" },
 			{ value: NO, label: "No" },
 		];
 		this.list = new SelectList(items, items.length, {
-			selectedPrefix: (text) => theme.fg("accent", text),
-			selectedText: (text) => theme.fg("accent", text),
+			selectedPrefix: (text) => paintConfirmationColor(theme, colors.selected, theme.bold(text)),
+			selectedText: (text) => paintConfirmationColor(theme, colors.selected, theme.bold(text)),
 			description: (text) => theme.fg("dim", text),
 			scrollInfo: (text) => theme.fg("dim", text),
 			noMatch: (text) => theme.fg("warning", text),
 		});
+		this.list.setSelectedIndex(1);
 		this.list.onSelect = (item) => this.done({ allowed: item.value === YES });
 		this.list.onCancel = () => this.done({ allowed: false });
 		this.list.onSelectionChange = () => this.rebuild();
@@ -107,16 +118,21 @@ class SafetyDialog implements Focusable {
 	}
 
 	private rebuild(): void {
-		const border = () => new DynamicBorder((text: string) => this.theme.fg("borderMuted", text));
+		const border = () => new DynamicBorder((text: string) =>
+			paintConfirmationColor(this.theme, this.colors.border, text));
 		const separatorIndex = this.subject.indexOf(": ");
 		const label = separatorIndex > 0 ? this.subject.slice(0, separatorIndex) : "Operation";
 		const value = separatorIndex > 0 ? this.subject.slice(separatorIndex + 2) : this.subject;
 
 		this.container.clear();
 		this.container.addChild(border());
-		this.container.addChild(new Text(this.theme.fg("warning", this.theme.bold(this.title)), 1, 0));
-		this.container.addChild(new Text(this.theme.fg("muted", this.reason), 1, 1));
-		this.container.addChild(new Text(this.theme.fg("dim", label), 1, 0));
+		this.container.addChild(new Text(
+			paintConfirmationColor(this.theme, this.colors.title, this.theme.bold(this.title)),
+			1,
+			0,
+		));
+		this.container.addChild(new Text(this.theme.fg("text", this.reason), 1, 1));
+		this.container.addChild(new Text(this.theme.fg("muted", label), 1, 0));
 		this.container.addChild(new Text(this.theme.fg("text", value), 1, 1));
 
 		if (this.mode === "select") {
@@ -125,11 +141,11 @@ class SafetyDialog implements Focusable {
 			const help = canExplain
 				? "↑↓ choose  •  enter confirm  •  tab explain  •  esc reject"
 				: "↑↓ choose  •  enter confirm  •  esc reject";
-			this.container.addChild(new Text(this.theme.fg("dim", help), 1, 1));
+			this.container.addChild(new Text(this.theme.fg("muted", help), 1, 1));
 		} else {
-			this.container.addChild(new Text(this.theme.fg("dim", "Tell what's wrong"), 1, 0));
+			this.container.addChild(new Text(this.theme.fg("muted", "Tell what's wrong"), 1, 0));
 			this.container.addChild(this.input);
-			this.container.addChild(new Text(this.theme.fg("dim", "enter submit  •  esc back"), 1, 1));
+			this.container.addChild(new Text(this.theme.fg("muted", "enter submit  •  esc back"), 1, 1));
 		}
 		this.container.addChild(border());
 	}
@@ -147,8 +163,14 @@ export async function showThemedConfirmation(
 		return { allowed };
 	}
 
+	const loaded = loadConfirmationColors();
+	if (loaded.error && loaded.error !== reportedColorError) {
+		reportedColorError = loaded.error;
+		ctx.ui.notify(`Confirmation color config is invalid; using defaults: ${loaded.error}`, "warning");
+	}
+	if (!loaded.error) reportedColorError = undefined;
 	return ctx.ui.custom<SafetyConfirmationResult>((tui, theme, _keybindings, done) =>
-		new SafetyDialog(tui, theme, title, reason, subject, done));
+		new SafetyDialog(tui, theme, title, reason, subject, done, loaded.colors));
 }
 
 export function showSafetyConfirmation(

@@ -4,9 +4,11 @@ export type ColorValue = string | number;
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface FooterColors {
+	local: ColorValue;
 	path: ColorValue;
 	ssh: ColorValue;
 	branch: ColorValue;
+	session: ColorValue;
 	model: ColorValue;
 	thinking: Record<ThinkingLevel, ColorValue>;
 	context: {
@@ -17,23 +19,25 @@ export interface FooterColors {
 }
 
 export const DEFAULT_FOOTER_COLORS: FooterColors = {
+	local: "#7aa2f7",
 	path: "#67e8f9",
-	ssh: "#f59e0b",
+	ssh: "#ff9e64",
 	branch: "#4ade80",
-	model: "#c4b5fd",
+	session: "#f0a6ca",
+	model: "#c0caf5",
 	thinking: {
-		off: "#6b7280",
-		minimal: "#93c5fd",
-		low: "#38bdf8",
-		medium: "#34d399",
-		high: "#fbbf24",
-		xhigh: "#fb923c",
-		max: "#f87171",
+		off: "#565f89",
+		minimal: "#7aa2f7",
+		low: "#7dcfff",
+		medium: "#73daca",
+		high: "#bb9af7",
+		xhigh: "#ff9e64",
+		max: "#f7768e",
 	},
 	context: {
 		normal: "#4ade80",
-		warning: "#fbbf24",
-		error: "#f87171",
+		warning: "#e0af68",
+		error: "#f7768e",
 	},
 };
 
@@ -58,9 +62,11 @@ export function mergeFooterColors(value: unknown): FooterColors {
 	const defaults = DEFAULT_FOOTER_COLORS;
 
 	return {
+		local: mergeColor(defaults.local, input.local),
 		path: mergeColor(defaults.path, input.path),
 		ssh: mergeColor(defaults.ssh, input.ssh),
 		branch: mergeColor(defaults.branch, input.branch),
+		session: mergeColor(defaults.session, input.session),
 		model: mergeColor(defaults.model, input.model),
 		thinking: {
 			off: mergeColor(defaults.thinking.off, thinking.off),

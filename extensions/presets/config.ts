@@ -19,7 +19,7 @@ const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium
 export const DEFAULT_PRESETS: Presets = {
 	review: {
 		thinkingLevel: "high",
-		tools: ["read", "bash", "grep", "find", "ls"],
+		tools: ["read", "bash", "grep", "find", "ls", "exa_search"],
 		instructions: "You are in strict review mode. Inspect the requested code and report actionable correctness, security, type-safety, and testing findings. Do not modify files. Bash is restricted to read-only inspection and verification commands; use it for git diff/status/log and focused tests when needed.",
 	},
 };

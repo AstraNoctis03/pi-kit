@@ -11,10 +11,12 @@ const requiredFiles = [
 	"extensions/custom-footer/colors.ts",
 	"extensions/custom-footer/index.ts",
 	"extensions/dirty-repo-guard/index.ts",
+	"extensions/exa-search/index.ts",
 	"extensions/handoff/index.ts",
 	"extensions/presets/config.ts",
 	"extensions/presets/index.ts",
 	"extensions/presets/review-policy.ts",
+	"extensions/safety-guard/dialog-colors.ts",
 	"extensions/safety-guard/dialog.ts",
 	"extensions/safety-guard/index.ts",
 	"extensions/safety-guard/policy.ts",
@@ -31,9 +33,10 @@ const requiredFiles = [
 const expectedSkills = ["code-review", "debugging"];
 const expectedFooterExtensionFiles = ["colors.ts", "index.ts"];
 const expectedDirtyExtensionFiles = ["index.ts"];
+const expectedExaExtensionFiles = ["index.ts"];
 const expectedHandoffExtensionFiles = ["index.ts"];
 const expectedPresetExtensionFiles = ["config.ts", "index.ts", "review-policy.ts"];
-const expectedSafetyExtensionFiles = ["dialog.ts", "index.ts", "policy.ts"];
+const expectedSafetyExtensionFiles = ["dialog-colors.ts", "dialog.ts", "index.ts", "policy.ts"];
 const expectedSensitiveExtensionFiles = ["config.ts", "index.ts"];
 const expectedSshExtensionFiles = ["config.ts", "index.ts", "paths.ts", "transport.ts"];
 const expectedTitleExtensionFiles = ["index.ts"];
@@ -67,6 +70,7 @@ if (pkg.name !== "pi-kit" || pkg.private !== true) fail("无效的 package ident
 if (!pkg.keywords?.includes("pi-package")) fail("keywords 必须包含 pi-package");
 if (JSON.stringify(pkg.pi?.skills) !== JSON.stringify(["./skills"])) fail("无效的 pi.skills manifest");
 if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
+	"./extensions/exa-search/index.ts",
 	"./extensions/presets/index.ts",
 	"./extensions/safety-guard/index.ts",
 	"./extensions/sensitive-paths/index.ts",
@@ -78,7 +82,7 @@ if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
 ])) {
 	fail("无效的 pi.extensions manifest");
 }
-for (const dependency of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) {
+for (const dependency of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]) {
 	if (pkg.peerDependencies?.[dependency] !== "*") fail(`缺少 peer dependency: ${dependency}`);
 }
 
@@ -94,6 +98,10 @@ for (const skill of expectedSkills) {
 const dirtyExtensionFiles = readdirSync(join("extensions", "dirty-repo-guard")).sort();
 if (JSON.stringify(dirtyExtensionFiles) !== JSON.stringify(expectedDirtyExtensionFiles)) {
 	fail(`非预期的 dirty guard extension 文件: ${dirtyExtensionFiles.join(", ")}`);
+}
+const exaExtensionFiles = readdirSync(join("extensions", "exa-search")).sort();
+if (JSON.stringify(exaExtensionFiles) !== JSON.stringify(expectedExaExtensionFiles)) {
+	fail(`非预期的 Exa extension 文件: ${exaExtensionFiles.join(", ")}`);
 }
 const footerExtensionFiles = readdirSync(join("extensions", "custom-footer")).sort();
 if (JSON.stringify(footerExtensionFiles) !== JSON.stringify(expectedFooterExtensionFiles)) {

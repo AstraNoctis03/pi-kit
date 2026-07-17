@@ -8,8 +8,16 @@ import { DEFAULT_FOOTER_COLORS, mergeFooterColors, paint } from "../extensions/c
 
 process.env.PI_CODING_AGENT_DIR = path.join(process.cwd(), ".footer-test-config-does-not-exist");
 
-const merged = mergeFooterColors({ path: "#112233", model: 141, thinking: { high: "invalid" } });
+const merged = mergeFooterColors({
+	local: "#223344",
+	path: "#112233",
+	session: 110,
+	model: 141,
+	thinking: { high: "invalid" },
+});
+assert.equal(merged.local, "#223344");
 assert.equal(merged.path, "#112233");
+assert.equal(merged.session, 110);
 assert.equal(merged.model, 141);
 assert.equal(merged.thinking.high, DEFAULT_FOOTER_COLORS.thinking.high);
 assert.equal(mergeFooterColors({ path: 999 }).path, DEFAULT_FOOTER_COLORS.path);
@@ -57,6 +65,7 @@ const entries = [
 		},
 	},
 ];
+let sessionName;
 const ctx = {
 	cwd: path.join(homedir(), "pi-kit"),
 	model: { id: "gpt-5.6-sol", provider: "openai-codex", reasoning: true, contextWindow: 372_000 },
@@ -65,7 +74,7 @@ const ctx = {
 	getContextUsage: () => ({ tokens: 165_540, contextWindow: 372_000, percent: 44.5 }),
 	sessionManager: {
 		getCwd: () => path.join(homedir(), "pi-kit"),
-		getSessionName: () => undefined,
+		getSessionName: () => sessionName,
 		getEntries: () => entries,
 	},
 	ui: {
@@ -92,15 +101,25 @@ assert.ok(lines.every((line) => visibleWidth(line) <= 80));
 assert.match(stripAnsi(lines[0]), /LOCAL .*pi-kit \(main\).*gpt-5\.6-sol.*high/);
 assert.match(stripAnsi(lines[1]), /↑281k ↓58k R12M CH99\.6% \$9\.059\(sub\).*ctx 44\.5%\/372k auto/);
 
+sessionName = "release validation";
 statuses.set("preset", "preset:review");
 lines = component.render(80);
-assert.match(stripAnsi(lines[0]), /preset:review/);
+assert.match(stripAnsi(lines[0]), /preset:review.*release validation/);
 assert.equal(lines.length, 2);
+
+sessionName = "long session name ".repeat(8);
+lines = component.render(64);
+assert.match(stripAnsi(lines[0]), /preset:review/, "Workflow mode should stay visible before a long session name");
+lines = component.render(16);
+assert.match(stripAnsi(lines[0]), /^LOCAL/, "Narrow footers should preserve the local target indicator");
+assert.ok(lines.every((line) => visibleWidth(line) <= 16));
 
 statuses.set("ssh-remote", "SSH: s1d:/home/xjmao");
 lines = component.render(80);
 assert.match(stripAnsi(lines[0]), /SSH s1d:\/home\/xjmao.*gpt-5\.6-sol.*high/);
 assert.doesNotMatch(stripAnsi(lines[0]), /\(main\)/);
+lines = component.render(16);
+assert.match(stripAnsi(lines[0]), /^SSH /, "Narrow footers should preserve the remote target indicator");
 
 component.dispose();
 console.log("test:footer ok");

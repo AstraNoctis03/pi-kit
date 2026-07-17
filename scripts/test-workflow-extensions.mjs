@@ -7,6 +7,12 @@ import presetsExtension from "../extensions/presets/index.ts";
 import { DEFAULT_PRESETS, parsePresets } from "../extensions/presets/config.ts";
 import { reviewCommandDecision } from "../extensions/presets/review-policy.ts";
 import sensitivePaths from "../extensions/sensitive-paths/index.ts";
+import { SafetyDialog } from "../extensions/safety-guard/dialog.ts";
+import {
+	DEFAULT_CONFIRMATION_COLORS,
+	mergeConfirmationColors,
+	paintConfirmationColor,
+} from "../extensions/safety-guard/dialog-colors.ts";
 import {
 	classifySensitivePath,
 	DEFAULT_SENSITIVE_PATH_RULES,
@@ -76,12 +82,35 @@ try {
 	rmSync(symlinkRoot, { recursive: true, force: true });
 }
 
+assert.deepEqual(mergeConfirmationColors({ border: "#112233", title: 214, selected: "invalid" }), {
+	border: "#112233",
+	title: 214,
+	selected: DEFAULT_CONFIRMATION_COLORS.selected,
+});
+assert.match(paintConfirmationColor({ fg: (_color, text) => text }, "#112233", "border"), /38;2;17;34;51m/);
+assert.match(paintConfirmationColor({ fg: (_color, text) => text }, 214, "title"), /38;5;214m/);
+
+let safetyDialogResult;
+const safetyDialog = new SafetyDialog(
+	{ requestRender() {} },
+	{ fg: (color, text) => `[${color}]${text}[/]`, bold: (text) => `[bold]${text}[/]` },
+	"Safety confirmation",
+	"Confirm the guarded operation.",
+	"Command: test",
+	(result) => { safetyDialogResult = result; },
+);
+const safetyDialogOutput = safetyDialog.render(80).join("\n");
+assert.match(safetyDialogOutput, /\[bold\]→ No\[\/\]/, "The default selection should have non-color emphasis");
+assert.match(safetyDialogOutput, /\[muted\]↑↓ choose/, "Safety shortcuts should remain readable");
+safetyDialog.handleInput("\r");
+assert.deepEqual(safetyDialogResult, { allowed: false }, "The shared confirmation must default to No");
+
 function createPiMock() {
 	const handlers = new Map();
 	const commands = new Map();
 	const statuses = new Map();
 	const entries = [];
-	const allTools = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+	const allTools = ["read", "bash", "edit", "write", "grep", "find", "ls", "exa_search"];
 	let activeTools = [...allTools];
 	let thinkingLevel = "medium";
 	return {
@@ -128,7 +157,7 @@ const presetMock = createPiMock();
 presetsExtension(presetMock.api);
 for (const handler of presetMock.handlers.get("session_start") ?? []) await handler({ reason: "startup" }, presetMock.ctx);
 await presetMock.commands.get("preset").handler("review", presetMock.ctx);
-assert.deepEqual(presetMock.activeTools, ["read", "bash", "grep", "find", "ls"]);
+assert.deepEqual(presetMock.activeTools, ["read", "bash", "grep", "find", "ls", "exa_search"]);
 assert.equal(presetMock.thinkingLevel, "high");
 assert.equal(presetMock.statuses.get("preset"), "preset:review");
 assert.deepEqual(presetMock.entries.at(-1), { customType: "preset-state", data: { name: "review" } });
@@ -141,7 +170,7 @@ assert.equal((await reviewGuard({ toolName: "write", input: { path: "file", cont
 await presetMock.commands.get("preset").handler("none", presetMock.ctx);
 assert.equal(presetMock.statuses.get("preset"), "preset:review");
 await presetMock.commands.get("preset").handler("normal", presetMock.ctx);
-assert.deepEqual(presetMock.activeTools, ["read", "bash", "edit", "write", "grep", "find", "ls"]);
+assert.deepEqual(presetMock.activeTools, ["read", "bash", "edit", "write", "grep", "find", "ls", "exa_search"]);
 assert.equal(presetMock.thinkingLevel, "medium");
 assert.equal(presetMock.statuses.has("preset"), false);
 

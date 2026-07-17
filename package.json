@@ -2,7 +2,7 @@
   "name": "pi-kit",
   "version": "0.1.0",
   "private": true,
-  "description": "个人 Pi Coding Agent 配置包：安全扩展、SSH 远程工作流和自定义 Footer。",
+  "description": "个人 Pi Coding Agent 配置包：安全扩展、SSH 远程工作流、Exa 搜索和自定义 Footer。",
   "license": "MIT",
   "keywords": [
     "pi",
@@ -15,6 +15,7 @@
     "validate:resources": "node scripts/validate-resources.mjs",
     "test:safety": "node scripts/test-safety-guard.js",
     "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs",
+    "test:exa": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-exa-search.mjs",
     "test:footer": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-custom-footer.mjs",
     "test:workflow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-workflow-extensions.mjs",
     "test:session-extensions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-session-extensions.mjs",
@@ -23,13 +24,15 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "pi": {
     "skills": [
       "./skills"
     ],
     "extensions": [
+      "./extensions/exa-search/index.ts",
       "./extensions/presets/index.ts",
       "./extensions/safety-guard/index.ts",
       "./extensions/sensitive-paths/index.ts",
@@ -44,6 +47,7 @@
     "@earendil-works/pi-ai": "^0.80.6",
     "@earendil-works/pi-coding-agent": "^0.80.6",
     "@earendil-works/pi-tui": "^0.80.6",
+    "typebox": "^1.1.38",
     "typescript": "^6.0.3"
   }
 }

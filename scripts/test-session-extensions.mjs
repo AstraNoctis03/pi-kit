@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import dirtyRepoGuard from "../extensions/dirty-repo-guard/index.ts";
-import { handoffMessages } from "../extensions/handoff/index.ts";
+import { handoffMessages, handoffSessionName } from "../extensions/handoff/index.ts";
 import { titleTarget } from "../extensions/titlebar-spinner/index.ts";
 
 const compacted = handoffMessages([
@@ -14,6 +14,10 @@ const compacted = handoffMessages([
 	{ id: "recent", type: "message", message: { role: "user", content: "recent" } },
 ]);
 assert.deepEqual(compacted.map((message) => message.role), ["compactionSummary", "assistant", "user"]);
+assert.equal(handoffSessionName("  继续实现下一阶段\n并运行测试  "), "继续实现下一阶段 并运行测试");
+const longHandoffName = handoffSessionName("a".repeat(80));
+assert.equal([...longHandoffName].length, 60);
+assert.equal(longHandoffName.endsWith("…"), true);
 
 assert.equal(
 	titleTarget({ getFlag: () => "s1d:/home/xjmao/project" }, { cwd: "C:/local" }),

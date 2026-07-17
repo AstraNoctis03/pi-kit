@@ -7,11 +7,13 @@
 - SSH 连接使用 BatchMode、连接超时和 `ClearAllForwardings`，失败时不回退到本地工具。
 - 新增 SSH 参数、路径映射和 Shell 转义测试。
 - 新增两行 Custom Footer，突出本地/SSH 目标、Git 分支、模型、思考等级和上下文用量。
-- Footer 独立颜色支持 `#RRGGBB` 与 256 色配置；修改后使用 Pi 内置 `/reload` 重载。
+- Footer 独立颜色支持 `#RRGGBB` 与 256 色配置，默认模型与推理等级采用协调的 Tokyo Night 配色；修改后使用 Pi 内置 `/reload` 重载。
 - 新增严格只读的 `review` Preset，支持 Git 只读、检查与测试命令，并在工具层阻止修改；支持全局/可信项目配置、CLI 参数和会话状态恢复。
 - 新增 Sensitive Paths，保护 Git 元数据、私钥、环境变量和凭据文件，并支持可扩展的 allow/block/confirm 规则。
-- 新增 Handoff，将长会话整理为可编辑的新会话启动提示。
+- 新增 Handoff，将长会话整理为可编辑的新会话启动提示，并根据下一阶段目标自动命名新 Session。
 - 新增本地 Dirty Repo Guard，在会话切换、Fork 和 Clone 前检查未提交改动；SSH 模式直接跳过。
+- 新增本地只读 `exa_search` 工具，通过 Exa API 返回带来源和费用的网页搜索结果，并支持 Review 与 SSH 模式。
+- 共享主题化确认框改为默认选中 `No`，支持可配置的自定义边框、标题与选中项颜色，并保留主题化正文。
 - 新增 Titlebar Spinner，在 Agent 工作期间显示终端标题动画和当前目标。
 
 ## v0.1.0 - 2026-07-14
