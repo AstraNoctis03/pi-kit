@@ -40,7 +40,6 @@ interface RemoteSession {
 	client: SshClient;
 	hasRipgrep: boolean;
 	host: string;
-	localCwd: string;
 	mapper: RemotePathMapper;
 	remoteCwd: string;
 	remoteHome: string;
@@ -441,7 +440,6 @@ export default function sshRemote(pi: ExtensionAPI): void {
 				client,
 				hasRipgrep: ripgrepFlag === "1",
 				host: parsed.host,
-				localCwd: ctx.cwd,
 				remoteCwd,
 				remoteHome,
 				mapper: new RemotePathMapper(ctx.cwd, remoteCwd, remoteHome),
@@ -484,17 +482,17 @@ export default function sshRemote(pi: ExtensionAPI): void {
 
 	pi.on("before_agent_start", async (event) => {
 		if (!sessionNameTopic(pi.getSessionName())) syncSessionName(compactSessionTopic(event.prompt));
-		if (!requested) return undefined;
-		if (!session) {
-			return { systemPrompt: `${event.systemPrompt}\n\nSSH remote mode is unavailable. Do not use file or shell tools.` };
+		const options = event.systemPromptOptions;
+		if (!requested) {
+			delete options.sections.pi_kit_ssh;
+			return;
 		}
-		const localLine = `Current working directory: ${session.localCwd}`;
-		const remoteLine = `Current working directory: ${session.remoteCwd} (via SSH: ${session.host}). All file and shell tools operate on this remote server.`;
-		return {
-			systemPrompt: event.systemPrompt.includes(localLine)
-				? event.systemPrompt.replace(localLine, remoteLine)
-				: `${event.systemPrompt}\n\n${remoteLine}`,
-		};
+		if (!session) {
+			options.sections.pi_kit_ssh = "SSH remote mode is unavailable. Do not use file or shell tools.";
+			return;
+		}
+		options.cwd = session.remoteCwd;
+		options.sections.pi_kit_ssh = `SSH target: ${session.host}. The read, write, edit, bash, grep, find and ls tools operate on this remote server. The powershell tool is blocked; exa_search still runs locally.`;
 	});
 
 	pi.on("session_info_changed", async (event) => {

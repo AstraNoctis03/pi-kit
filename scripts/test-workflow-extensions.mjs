@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import sshRemote from "../extensions/ssh-remote/index.ts";
+import { SshClient } from "../extensions/ssh-remote/transport.ts";
 import presetsExtension from "../extensions/presets/index.ts";
 import { DEFAULT_PRESETS, parsePresets } from "../extensions/presets/config.ts";
 import { reviewCommandDecision } from "../extensions/presets/review-policy.ts";
@@ -22,6 +25,27 @@ import {
 } from "../extensions/sensitive-paths/config.ts";
 
 process.env.PI_CODING_AGENT_DIR = path.join(process.cwd(), ".workflow-test-config-does-not-exist");
+
+// Exercise Pi's real prompt renderer/diff without creating a live agent or network request.
+const agentEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+const { normalizeBuildSystemPromptOptions, buildSystemPromptSections, diffSystemPromptSections } = await import(
+	pathToFileURL(path.join(path.dirname(agentEntry), "core", "system-prompt.js"))
+);
+function promptEvent() {
+	return {
+		prompt: "Inspect project",
+		get systemPrompt() { throw new Error("Handlers must not read or rewrite the rendered prompt"); },
+		systemPromptOptions: normalizeBuildSystemPromptOptions({
+			cwd: process.cwd(),
+			selectedTools: ["read", "bash", "exa_search"],
+			toolSnippets: { read: "Read files", bash: "Run commands" },
+			promptGuidelines: ["Preserve this user rule"],
+			appendSystemPrompt: "Preserve the addendum",
+			contextFiles: [{ path: "AGENTS.md", content: "Preserve project rules" }],
+			sections: { another_extension: "Preserve another extension" },
+		}),
+	};
+}
 
 assert.equal(DEFAULT_PRESETS.review.thinkingLevel, "high");
 assert.deepEqual(parsePresets({ custom: { thinkingLevel: "low", tools: ["read", "read"] } }), {
@@ -106,7 +130,7 @@ assert.match(safetyDialogOutput, /\[muted\]↑↓ choose/, "Safety shortcuts sho
 safetyDialog.handleInput("\r");
 assert.deepEqual(safetyDialogResult, { allowed: true }, "The shared confirmation must default to Yes");
 
-function createPiMock() {
+function createPiMock(flags = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const statuses = new Map();
@@ -114,6 +138,7 @@ function createPiMock() {
 	const allTools = ["read", "bash", "edit", "write", "grep", "find", "ls", "exa_search", "powershell"];
 	let activeTools = [...allTools];
 	let thinkingLevel = "medium";
+	let sessionName;
 	return {
 		handlers,
 		commands,
@@ -123,7 +148,10 @@ function createPiMock() {
 		get thinkingLevel() { return thinkingLevel; },
 		api: {
 			registerFlag() {},
-			getFlag: () => undefined,
+			getFlag: (name) => flags[name],
+			registerTool() {},
+			getSessionName: () => sessionName,
+			setSessionName(name) { sessionName = name; },
 			registerCommand(name, command) { commands.set(name, command); },
 			on(name, handler) {
 				const eventHandlers = handlers.get(name) ?? [];
@@ -143,7 +171,7 @@ function createPiMock() {
 			model: undefined,
 			modelRegistry: { find: () => undefined },
 			isProjectTrusted: () => false,
-			sessionManager: { getBranch: () => [] },
+			sessionManager: { getBranch: () => [], getEntries: () => [] },
 			ui: {
 				theme: { fg: (_color, text) => text },
 				setStatus(key, value) { value === undefined ? statuses.delete(key) : statuses.set(key, value); },
@@ -162,8 +190,18 @@ assert.deepEqual(presetMock.activeTools, ["read", "bash", "grep", "find", "ls", 
 assert.equal(presetMock.thinkingLevel, "high");
 assert.equal(presetMock.statuses.get("preset"), "preset:review");
 assert.deepEqual(presetMock.entries.at(-1), { customType: "preset-state", data: { name: "review" } });
-const promptResult = await presetMock.handlers.get("before_agent_start")[0]({ systemPrompt: "base" }, presetMock.ctx);
-assert.match(promptResult.systemPrompt, /review mode/);
+const presetPromptHandler = presetMock.handlers.get("before_agent_start")[0];
+const presetEvent = promptEvent();
+const baseOptions = structuredClone(presetEvent.systemPromptOptions);
+assert.equal(await presetPromptHandler(presetEvent, presetMock.ctx), undefined);
+assert.match(presetEvent.systemPromptOptions.sections.pi_kit_preset, /review mode/);
+const reviewSections = buildSystemPromptSections(presetEvent.systemPromptOptions);
+await presetPromptHandler(presetEvent, presetMock.ctx);
+assert.deepEqual(buildSystemPromptSections(presetEvent.systemPromptOptions), reviewSections,
+	"Repeated turns must replace a section, not append duplicate instructions");
+assert.deepEqual(presetEvent.systemPromptOptions, {
+	...baseOptions, sections: { ...baseOptions.sections, pi_kit_preset: DEFAULT_PRESETS.review.instructions },
+});
 const reviewGuard = presetMock.handlers.get("tool_call")[0];
 assert.equal(await reviewGuard({ toolName: "bash", input: { command: "git diff --check" } }, { ...presetMock.ctx, hasUI: true }), undefined);
 assert.equal((await reviewGuard({ toolName: "bash", input: { command: "rm file" } }, { ...presetMock.ctx, hasUI: true })).block, true);
@@ -184,6 +222,11 @@ assert.equal(await reviewGuard({ toolName: "powershell", input: { command: "Get-
 	"Normal preset leaves PowerShell policy to Safety Guard");
 assert.equal(presetMock.thinkingLevel, "medium");
 assert.equal(presetMock.statuses.has("preset"), false);
+await presetPromptHandler(presetEvent, presetMock.ctx);
+assert.deepEqual(presetEvent.systemPromptOptions, baseOptions, "Normal mode removes only the preset's own section");
+const normalSections = buildSystemPromptSections(presetEvent.systemPromptOptions);
+assert.equal(diffSystemPromptSections(reviewSections, normalSections).pi_kit_preset, null,
+	"Pi must emit a section removal rather than keep stale Review instructions");
 
 const safetyMock = createPiMock();
 safetyGuard(safetyMock.api);
@@ -218,5 +261,57 @@ const nonInteractive = await guardHandler(
 	{ ...guardMock.ctx, hasUI: false },
 );
 assert.equal(nonInteractive.block, true);
+
+// Both extension orders must preserve tools, project rules and unrelated sections.
+const originalSshRun = SshClient.prototype.run;
+let probeCalls = 0;
+try {
+	SshClient.prototype.run = async function (command) {
+		probeCalls += 1;
+		assert.match(command, /remote_hostname=/, "Only the startup probe should run");
+		return {
+			exitCode: 0, stderr: Buffer.alloc(0),
+			stdout: Buffer.from(["/srv/project with spaces", "/home/fixture", "fixture-host", "1", ""].join("\0")),
+		};
+	};
+	for (const extensions of [[presetsExtension, sshRemote], [sshRemote, presetsExtension]]) {
+		const combined = createPiMock({ ssh: "fixture:/srv/project with spaces" });
+		for (const extension of extensions) extension(combined.api);
+		for (const handler of combined.handlers.get("session_start")) await handler({}, combined.ctx);
+		await combined.commands.get("preset").handler("review", combined.ctx);
+		const event = promptEvent();
+		const originalOptions = structuredClone(event.systemPromptOptions);
+		const emitPrompt = async () => {
+			for (const handler of combined.handlers.get("before_agent_start")) {
+				assert.equal(await handler(event, combined.ctx), undefined);
+			}
+			return buildSystemPromptSections(event.systemPromptOptions);
+		};
+		const sections = await emitPrompt();
+		assert.equal(combined.ctx.cwd, process.cwd(), "Changing prompt cwd must not change the local extension context");
+		assert.equal(sections.cwd, "<cwd>\n/srv/project with spaces\n</cwd>");
+		assert.match(sections.pi_kit_ssh, /SSH target: fixture/);
+		assert.match(sections.pi_kit_ssh, /exa_search still runs locally/);
+		assert.match(sections.pi_kit_preset, /review mode/);
+		assert.deepEqual(event.systemPromptOptions, {
+			...originalOptions, cwd: "/srv/project with spaces",
+			sections: {
+				...originalOptions.sections,
+				pi_kit_preset: DEFAULT_PRESETS.review.instructions,
+				pi_kit_ssh: event.systemPromptOptions.sections.pi_kit_ssh,
+			},
+		});
+		assert.deepEqual(await emitPrompt(), sections, "Composed prompts must be stable across repeated turns");
+		await combined.commands.get("preset").handler("normal", combined.ctx);
+		const normal = await emitPrompt();
+		assert.equal(normal.pi_kit_preset, undefined);
+		assert.equal(normal.pi_kit_ssh, sections.pi_kit_ssh);
+		assert.equal(normal.cwd, sections.cwd);
+		assert.deepEqual(diffSystemPromptSections(sections, normal), { pi_kit_preset: null });
+	}
+} finally {
+	SshClient.prototype.run = originalSshRun;
+}
+assert.equal(probeCalls, 2, "Tests use simulated probes, not real SSH connections");
 
 console.log("test:workflow ok");

@@ -142,8 +142,11 @@ export default function presetsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		if (!activePreset?.instructions) return undefined;
-		return { systemPrompt: `${event.systemPrompt}\n\n${activePreset.instructions}` };
+		if (activePreset?.instructions) {
+			event.systemPromptOptions.sections.pi_kit_preset = activePreset.instructions;
+		} else {
+			delete event.systemPromptOptions.sections.pi_kit_preset;
+		}
 	});
 
 	pi.on("session_start", async (_event, ctx) => {

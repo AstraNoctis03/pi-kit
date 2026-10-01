@@ -1,5 +1,5 @@
 import { uuidv7 } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	BorderedLoader,
 	convertToLlm,
@@ -31,40 +31,6 @@ export function handoffSessionName(goal: string): string {
 	return characters.length <= 60 ? normalized : `${characters.slice(0, 59).join("")}…`;
 }
 
-function entryToMessage(entry: SessionEntry) {
-	if (entry.type === "message") return entry.message;
-	if (entry.type === "compaction") {
-		return {
-			role: "compactionSummary" as const,
-			summary: entry.summary,
-			tokensBefore: entry.tokensBefore,
-			timestamp: new Date(entry.timestamp).getTime(),
-		};
-	}
-	return undefined;
-}
-
-export function handoffMessages(branch: SessionEntry[]) {
-	let compactionIndex = -1;
-	for (let index = branch.length - 1; index >= 0; index -= 1) {
-		if (branch[index].type === "compaction") {
-			compactionIndex = index;
-			break;
-		}
-	}
-	if (compactionIndex < 0) return branch.map(entryToMessage).filter((message) => message !== undefined);
-	const compaction = branch[compactionIndex];
-	const firstKeptIndex = compaction.type === "compaction"
-		? branch.findIndex((entry) => entry.id === compaction.firstKeptEntryId)
-		: -1;
-	const relevant = [
-		compaction,
-		...(firstKeptIndex >= 0 ? branch.slice(firstKeptIndex, compactionIndex) : []),
-		...branch.slice(compactionIndex + 1),
-	];
-	return relevant.map(entryToMessage).filter((message) => message !== undefined);
-}
-
 export default function handoffExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("handoff", {
 		description: "Create a focused replacement session for the next goal",
@@ -83,13 +49,13 @@ export default function handoffExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify("Usage: /handoff <goal for the new session>", "error");
 				return;
 			}
-			const messages = handoffMessages(ctx.sessionManager.getBranch());
-			if (messages.length === 0) {
+			const { messages } = ctx.sessionManager.buildSessionProjection();
+			const conversation = serializeConversation(convertToLlm(messages));
+			if (!conversation.trim()) {
 				ctx.ui.notify("No conversation to hand off", "warning");
 				return;
 			}
 
-			const conversation = serializeConversation(convertToLlm(messages));
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 			let generationError: string | undefined;
 			const generated = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {

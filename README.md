@@ -121,6 +121,8 @@ pi --ssh mgt01d
 
 远程模式会禁用 SSH 配置中的 `LocalForward`，避免并行工具调用争用本地转发端口。连接失败后工具会保持 fail-closed，不会退回本地执行。独立的 `powershell` 工具不属于 SSH 传输范围，在 SSH 模式始终阻止（即使未加载 Safety Guard），避免误执行本地命令。使用 `/ssh-status` 查看当前目标。
 
+SSH 通过结构化提示的 `cwd` 与独立 `pi_kit_ssh` 章节标明远程目标，不再替换整段提示文本；保留其他扩展的指令，并明确 `exa_search` 仍在本机运行。
+
 Session 名称会自动带上执行目标，例如 `[LOCAL] 修复登录测试` 或 `[SSH compute-01:project] 修复登录测试`，因此可在 `/resume` 中直接区分并搜索本地、服务器和项目。SSH 标签使用远端机器报告的短主机名，而不是连接别名，所以 `s1`、`s1d` 等公网/内网别名连接同一台机器时名称保持一致；探测不到主机名时才回退到 SSH 别名。使用 `/name` 重命名当前 Session 时目标前缀会自动保留；旧 Session 或在选择器中通过 `Ctrl+R` 改名的 Session 会在下次载入时补上当前目标前缀。
 
 要求：
@@ -164,7 +166,7 @@ Review 的 Bash 限制是静态白名单而非操作系统沙箱；已阻止已�
 /preset normal
 ```
 
-`normal` 恢复启用 Review 前的模型、思考等级和完整工具；简单任务通过 `Shift+Tab` 调整思考强度，无需额外 Preset。
+`normal` 恢复启用 Review 前的模型、思考等级和完整工具；简单任务通过 `Shift+Tab` 调整思考强度，无需额外 Preset。Preset 指令使用独立的 `pi_kit_preset` 结构化提示章节，重复回合不会追加副本，切回 `normal` 后在下一次请求移除该章节，不覆盖 SSH 或其他扩展的提示。
 
 也可在启动时指定：
 
@@ -193,6 +195,8 @@ pi --preset review
 ```text
 /handoff 继续实现下一阶段并运行相关测试
 ```
+
+Handoff 使用 Pi 官方 `buildSessionProjection()` 获取当前分支的有效上下文，遵循压缩边界及 `context_edit` 的排除与替换，保留有效的分支摘要和自定义上下文消息，不修改原始会话记录。若没有可总结的文本，不发起模型调用。
 
 Handoff 会使用当前模型总结相关上下文，允许编辑生成结果，然后创建带父会话关联的新 Session，并使用 `/handoff` 后的目标自动命名（最长 60 个字符）。它通过 Pi 的 `modelRegistry.complete()` 额外产生一次模型调用，由 Pi 统一处理认证（不强制要求 API Key），使用独立请求会话并关闭该次调用的缓存保留。生成错误、空正文或取消不会创建新会话；本地模式下如果 Dirty Repo Guard 检测到未提交改动，切换前仍会要求确认。
 

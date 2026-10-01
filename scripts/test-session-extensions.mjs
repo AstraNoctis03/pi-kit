@@ -3,18 +3,11 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { initTheme, SessionManager } from "@earendil-works/pi-coding-agent";
 import dirtyRepoGuard from "../extensions/dirty-repo-guard/index.ts";
-import handoffExtension, { handoffMessages, handoffSessionName } from "../extensions/handoff/index.ts";
+import handoffExtension, { handoffSessionName } from "../extensions/handoff/index.ts";
 import { titleTarget } from "../extensions/titlebar-spinner/index.ts";
 
-const compacted = handoffMessages([
-	{ id: "old", type: "message", message: { role: "user", content: "old" } },
-	{ id: "kept", type: "message", message: { role: "assistant", content: [] } },
-	{ id: "compact", type: "compaction", summary: "summary", tokensBefore: 1000, timestamp: Date.now(), firstKeptEntryId: "kept" },
-	{ id: "recent", type: "message", message: { role: "user", content: "recent" } },
-]);
-assert.deepEqual(compacted.map((message) => message.role), ["compactionSummary", "assistant", "user"]);
 assert.equal(handoffSessionName("  继续实现下一阶段\n并运行测试  "), "继续实现下一阶段 并运行测试");
 const longHandoffName = handoffSessionName("a".repeat(80));
 assert.equal([...longHandoffName].length, 60);
@@ -28,15 +21,13 @@ const handoffNotifications = [];
 let handoffSessionNameWritten;
 let handoffEditorText;
 let newSessionCalls = 0;
+const handoffSession = SessionManager.inMemory(process.cwd());
+handoffSession.appendMessage({ role: "user", content: "Existing context", timestamp: Date.now() });
 const handoffCtx = {
 	mode: "tui",
 	model: { provider: "test", id: "test-model" },
 	sessionManager: {
-		getBranch: () => [{
-			id: "message-1",
-			type: "message",
-			message: { role: "user", content: "Existing context", timestamp: Date.now() },
-		}],
+		buildSessionProjection: () => handoffSession.buildSessionProjection(),
 		getSessionFile: () => "parent-session.jsonl",
 	},
 	ui: {
@@ -74,10 +65,11 @@ assert.ok(handoffNotifications.some(({ message }) => message === "Handoff cancel
 
 // Exercise the actual generation callback and official loader, not just a canned UI result.
 initTheme("dark", false);
-function generationHarness(complete, { cancel = false, switchCancelled = false } = {}) {
+function generationHarness(complete, { cancel = false, switchCancelled = false, sessionManager = handoffCtx.sessionManager } = {}) {
 	const state = { requests: [], notifications: [], doneCalls: 0, editorCalls: 0, sessionCalls: 0 };
 	const ctx = {
 		...handoffCtx,
+		sessionManager,
 		// No API key or getApiKeyAndHeaders: authentication belongs to ModelRegistry.
 		modelRegistry: {
 			async complete(model, context, options) {
@@ -137,6 +129,87 @@ assert.equal(typeof request.options.sessionId, "string");
 assert.equal("apiKey" in request.options, false);
 await success.run();
 assert.notEqual(success.state.requests[1].options.sessionId, request.options.sessionId);
+
+// Use real, in-memory session trees and inspect the text sent to the model.
+const appendUser = (manager, content) => manager.appendMessage({ role: "user", content, timestamp: Date.now() });
+async function handoffTranscript(sessionManager) {
+	const harness = generationHarness(async () => successResponse, { sessionManager });
+	await harness.run();
+	assert.equal(harness.state.requests.length, 1);
+	return harness.state.requests[0].context.messages[0].content[0].text;
+}
+const projected = SessionManager.inMemory(process.cwd());
+const omittedId = appendUser(projected, "OMITTED_RAW_CONTENT");
+const replacedId = appendUser(projected, "REPLACED_RAW_CONTENT");
+const assistantId = projected.appendMessage({
+	role: "assistant", content: [{ type: "text", text: "OLD_ASSISTANT_CONTENT" }], timestamp: Date.now(),
+});
+const toolId = projected.appendMessage({
+	role: "toolResult", toolName: "read", toolCallId: "fixture", isError: false,
+	content: [{ type: "text", text: "OLD_TOOL_CONTENT" }], timestamp: Date.now(),
+});
+const beforeEdits = projected.getLeafId();
+projected.appendContextEdit(omittedId, null);
+projected.appendContextEdit(replacedId, { content: "Intermediate replacement" });
+projected.appendContextEdit(replacedId, { content: "Latest replacement" });
+projected.appendContextEdit(assistantId, { content: "Projected assistant" });
+projected.appendContextEdit(toolId, { content: "Projected tool result" });
+const editedLeaf = projected.getLeafId();
+const rawEntries = JSON.stringify(projected.getEntries());
+let transcript = await handoffTranscript(projected);
+assert.doesNotMatch(transcript, /OMITTED_RAW_CONTENT|REPLACED_RAW_CONTENT|OLD_ASSISTANT_CONTENT|OLD_TOOL_CONTENT|Intermediate replacement/);
+assert.match(transcript, /Latest replacement/);
+assert.match(transcript, /\[Assistant\]: Projected assistant/);
+assert.match(transcript, /\[Tool result\]: Projected tool result/);
+assert.equal(JSON.stringify(projected.getEntries()), rawEntries, "Handoff must not mutate raw history");
+
+projected.branch(beforeEdits);
+appendUser(projected, "SIBLING_BRANCH_ONLY");
+transcript = await handoffTranscript(projected);
+assert.match(transcript, /OMITTED_RAW_CONTENT/);
+assert.match(transcript, /REPLACED_RAW_CONTENT/);
+assert.doesNotMatch(transcript, /Latest replacement/, "Context edits must remain branch-relative");
+projected.branch(editedLeaf);
+transcript = await handoffTranscript(projected);
+assert.doesNotMatch(transcript, /SIBLING_BRANCH_ONLY|OMITTED_RAW_CONTENT/);
+
+const compacted = SessionManager.inMemory(process.cwd());
+appendUser(compacted, "SUMMARIZED_OLD_CONTENT");
+const keptId = appendUser(compacted, "KEPT_RAW_CONTENT");
+compacted.appendCompaction("Relevant compacted summary", keptId, 1000);
+compacted.appendContextEdit(keptId, { content: "Kept projected content" });
+appendUser(compacted, "Recent task");
+transcript = await handoffTranscript(compacted);
+assert.match(transcript, /Relevant compacted summary/);
+assert.match(transcript, /Kept projected content/);
+assert.match(transcript, /Recent task/);
+assert.doesNotMatch(transcript, /SUMMARIZED_OLD_CONTENT|KEPT_RAW_CONTENT/);
+compacted.appendCompaction("Retain-none summary", null, 2000);
+transcript = await handoffTranscript(compacted);
+assert.match(transcript, /Retain-none summary/);
+assert.doesNotMatch(transcript, /Relevant compacted summary|Kept projected content|Recent task/);
+
+const branchSummarySession = SessionManager.inMemory(process.cwd());
+const rootId = appendUser(branchSummarySession, "Shared task");
+appendUser(branchSummarySession, "ABANDONED_RAW_CONTENT");
+branchSummarySession.branchWithSummary(rootId, "Useful branch summary");
+const customId = branchSummarySession.appendCustomMessageEntry("fixture", "OLD_CUSTOM_CONTENT", false);
+branchSummarySession.appendContextEdit(customId, { content: "Projected custom context" });
+transcript = await handoffTranscript(branchSummarySession);
+assert.match(transcript, /Useful branch summary/);
+assert.match(transcript, /Projected custom context/);
+assert.doesNotMatch(transcript, /ABANDONED_RAW_CONTENT|OLD_CUSTOM_CONTENT/);
+
+const emptySession = SessionManager.inMemory(process.cwd());
+emptySession.appendMessage({ role: "system", content: "System-only prompt", timestamp: Date.now() });
+const removedId = appendUser(emptySession, "REMOVED_ALL_CONVERSATION");
+emptySession.appendContextEdit(removedId, null);
+const emptyHandoff = generationHarness(async () => { throw new Error("Must not call a model"); }, { sessionManager: emptySession });
+await emptyHandoff.run();
+assert.equal(emptyHandoff.state.requests.length, 0);
+assert.equal(emptyHandoff.state.editorCalls, 0);
+assert.equal(emptyHandoff.state.sessionCalls, 0);
+assert.ok(emptyHandoff.state.notifications.some(({ message }) => message === "No conversation to hand off"));
 
 for (const [response, expected] of [
 	[{ stopReason: "error", errorMessage: "Provider unavailable", content: [] }, /Provider unavailable/],

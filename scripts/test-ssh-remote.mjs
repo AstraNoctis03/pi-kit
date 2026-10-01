@@ -89,7 +89,17 @@ const localContext = {
 };
 await localHandlers.get("session_start")[0]({ reason: "startup" }, localContext);
 assert.equal(localSessionName, "[LOCAL]");
-await localHandlers.get("before_agent_start")[0]({ prompt: "Fix the failing tests", systemPrompt: "" }, localContext);
+const localPromptEvent = {
+	prompt: "Fix the failing tests",
+	get systemPrompt() { throw new Error("Do not read the rendered prompt"); },
+	systemPromptOptions: {
+		cwd: process.cwd(), sections: { pi_kit_ssh: "stale SSH section", other: "Keep this section" },
+	},
+};
+assert.equal(await localHandlers.get("before_agent_start")[0](localPromptEvent, localContext), undefined);
+assert.deepEqual(localPromptEvent.systemPromptOptions, {
+	cwd: process.cwd(), sections: { other: "Keep this section" },
+}, "Local mode removes only its own stale SSH section");
 assert.equal(localSessionName, "[LOCAL] Fix the failing tests");
 await localHandlers.get("session_info_changed")[0]({ name: "Release prep" }, localContext);
 assert.equal(localSessionName, "[LOCAL] Release prep");
@@ -101,6 +111,7 @@ const tools = new Map();
 const mockPi = {
 	registerFlag() {},
 	getFlag: () => "invalid target",
+	getSessionName: () => undefined,
 	on(name, handler) {
 		const eventHandlers = handlers.get(name) ?? [];
 		eventHandlers.push(handler);
@@ -132,6 +143,22 @@ await assert.rejects(
 	() => tools.get("read").execute("test", { path: "README.md" }, undefined, undefined, mockContext),
 	/SSH mode unavailable/,
 );
+
+const failedPromptEvent = {
+	prompt: "Inspect project",
+	get systemPrompt() { throw new Error("Do not read the rendered prompt"); },
+	systemPromptOptions: {
+		cwd: process.cwd(),
+		sections: { pi_kit_preset: "Review instructions", other: "Keep this section" },
+	},
+};
+assert.equal(await handlers.get("before_agent_start")[0](failedPromptEvent, mockContext), undefined);
+assert.deepEqual(failedPromptEvent.systemPromptOptions, {
+	cwd: process.cwd(), sections: {
+		pi_kit_preset: "Review instructions", other: "Keep this section",
+		pi_kit_ssh: "SSH remote mode is unavailable. Do not use file or shell tools.",
+	},
+});
 
 for (const parentToolCallId of [undefined, "codemode-parent"]) {
 	const decision = await sshToolGuard({ toolName: "powershell", parentToolCallId }, mockContext);

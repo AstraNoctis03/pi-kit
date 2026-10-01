@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Handoff 改用官方上下文投影，移除手写历史整理逻辑；补测 context_edit 排除/替换、分支隔离、压缩保留范围、分支摘要和空上下文。
+- Preset 与 SSH 改用独立结构化提示章节；SSH 直接设置提示中的远程 cwd，避免全文替换。补测重复回合、退出 Review、SSH 失败和两种扩展加载顺序的组合行为。
 - 开发依赖固定到 Pi 0.99.2 / TypeBox 1.3.27，CI 增加 Windows 与 Ubuntu 双平台验证。
 - Safety Guard 阻止尚未支持的独立 PowerShell 工具；Review 与 SSH 各自保留独立拦截，避免重新启用或嵌套调用时绕过策略、误执行本地命令。
 - Custom Footer 缓存会话统计与上下文用量，减少长会话流式重绘开销；补计缓存预热、压缩、分支摘要及工具结果的 usage，保持最近 Assistant 的缓存命中率口径。
