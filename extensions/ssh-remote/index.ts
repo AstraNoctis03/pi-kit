@@ -22,6 +22,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { findPathPatterns, parseSshTarget } from "./config.ts";
 import { RemotePathMapper, syntheticRemoteCwd } from "./paths.ts";
+import {
+	compactSessionTopic,
+	firstUserTopic,
+	sessionNameTopic,
+	sessionTargetLabel,
+	stableSessionHost,
+	targetedSessionName,
+} from "./session-label.ts";
 import { quoteShell, SshClient } from "./transport.ts";
 
 const DEFAULT_FIND_LIMIT = 1000;
@@ -391,14 +399,26 @@ export default function sshRemote(pi: ExtensionAPI): void {
 	let registered = false;
 	let session: RemoteSession | undefined;
 	let startupError: string | undefined;
+	let targetLabel: string | undefined;
 	const requireSession = () => {
 		if (session) return session;
 		throw new Error(startupError ? `SSH mode unavailable: ${startupError}` : "SSH mode is not initialized.");
 	};
+	const syncSessionName = (fallbackTopic?: string) => {
+		if (!targetLabel) return;
+		const currentName = pi.getSessionName();
+		const topic = sessionNameTopic(currentName) || fallbackTopic;
+		const nextName = targetedSessionName(targetLabel, topic);
+		if (nextName !== currentName) pi.setSessionName(nextName);
+	};
 
 	pi.on("session_start", async (_event, ctx) => {
 		const rawTarget = pi.getFlag("ssh") as string | undefined;
-		if (!rawTarget) return;
+		if (!rawTarget) {
+			targetLabel = sessionTargetLabel();
+			syncSessionName(firstUserTopic(ctx.sessionManager.getEntries()));
+			return;
+		}
 		requested = true;
 		if (!registered) {
 			registerRemoteTools(pi, requireSession, syntheticRemoteCwd(ctx.cwd));
@@ -410,10 +430,12 @@ export default function sshRemote(pi: ExtensionAPI): void {
 			displayHost = parsed.host;
 			const client = new SshClient(parsed.host);
 			const changeDirectory = parsed.remoteCwd ? `cd ${quoteShell(parsed.remoteCwd)} && ` : "";
-			const probeCommand = `${changeDirectory}test -r . || exit $?; printf '%s\\0%s\\0' "$PWD" "$HOME"; `
+			const probeCommand = `${changeDirectory}test -r . || exit $?; `
+				+ `remote_hostname=$(hostname -s 2>/dev/null || hostname 2>/dev/null || uname -n 2>/dev/null || true); `
+				+ `printf '%s\\0%s\\0%s\\0' "$PWD" "$HOME" "$remote_hostname"; `
 				+ `if command -v rg >/dev/null 2>&1; then printf '1\\0'; else printf '0\\0'; fi`;
 			const probe = await client.run(probeCommand, { timeoutSeconds: 15 });
-			const [remoteCwd, remoteHome, ripgrepFlag] = probe.stdout.toString("utf8").split("\0");
+			const [remoteCwd, remoteHome, remoteHostname, ripgrepFlag] = probe.stdout.toString("utf8").split("\0");
 			if (!remoteCwd || !remoteHome) throw new Error("Remote shell did not report PWD and HOME.");
 			session = {
 				client,
@@ -424,6 +446,8 @@ export default function sshRemote(pi: ExtensionAPI): void {
 				remoteHome,
 				mapper: new RemotePathMapper(ctx.cwd, remoteCwd, remoteHome),
 			};
+			targetLabel = sessionTargetLabel(stableSessionHost(remoteHostname, parsed.host), remoteCwd);
+			syncSessionName(firstUserTopic(ctx.sessionManager.getEntries()));
 			ctx.ui.setStatus("ssh-remote", ctx.ui.theme.fg("accent", `SSH: ${parsed.host}:${remoteCwd}`));
 			ctx.ui.notify(`SSH remote mode: ${parsed.host}:${remoteCwd}`, "info");
 		} catch (error) {
@@ -450,6 +474,7 @@ export default function sshRemote(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
+		if (!sessionNameTopic(pi.getSessionName())) syncSessionName(compactSessionTopic(event.prompt));
 		if (!requested) return undefined;
 		if (!session) {
 			return { systemPrompt: `${event.systemPrompt}\n\nSSH remote mode is unavailable. Do not use file or shell tools.` };
@@ -461,6 +486,12 @@ export default function sshRemote(pi: ExtensionAPI): void {
 				? event.systemPrompt.replace(localLine, remoteLine)
 				: `${event.systemPrompt}\n\n${remoteLine}`,
 		};
+	});
+
+	pi.on("session_info_changed", async (event) => {
+		if (!targetLabel) return;
+		const nextName = targetedSessionName(targetLabel, event.name);
+		if (nextName !== event.name) pi.setSessionName(nextName);
 	});
 
 	pi.registerCommand("ssh-status", {

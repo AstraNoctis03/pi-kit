@@ -26,6 +26,7 @@ const requiredFiles = [
 	"extensions/ssh-remote/config.ts",
 	"extensions/ssh-remote/index.ts",
 	"extensions/ssh-remote/paths.ts",
+	"extensions/ssh-remote/session-label.ts",
 	"extensions/ssh-remote/transport.ts",
 	"extensions/titlebar-spinner/index.ts",
 	"scripts/test-theme.mjs",
@@ -51,7 +52,7 @@ const expectedHandoffExtensionFiles = ["index.ts"];
 const expectedPresetExtensionFiles = ["config.ts", "index.ts", "review-policy.ts"];
 const expectedSafetyExtensionFiles = ["dialog-colors.ts", "dialog.ts", "index.ts", "policy.ts"];
 const expectedSensitiveExtensionFiles = ["config.ts", "index.ts"];
-const expectedSshExtensionFiles = ["config.ts", "index.ts", "paths.ts", "transport.ts"];
+const expectedSshExtensionFiles = ["config.ts", "index.ts", "paths.ts", "session-label.ts", "transport.ts"];
 const expectedTitleExtensionFiles = ["index.ts"];
 
 function fail(message) {

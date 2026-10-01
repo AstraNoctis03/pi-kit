@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Session 名称自动保留 `[LOCAL]` 或 `[SSH hostname:directory]` 目标前缀；SSH 使用远端实际短主机名统一公网/内网连接别名，便于在 `/resume` 中稳定区分和搜索执行目标。
 - CI 仅在 main Push 与 Pull Request 运行，避免发布 Tag 重复执行同一套检查。
 
 ## v0.2.0 - 2026-07-17
