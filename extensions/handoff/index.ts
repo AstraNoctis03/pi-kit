@@ -1,4 +1,4 @@
-import { complete } from "@earendil-works/pi-ai/compat";
+import { uuidv7 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
 	BorderedLoader,
@@ -73,7 +73,8 @@ export default function handoffExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify("/handoff requires interactive mode", "error");
 				return;
 			}
-			if (!ctx.model) {
+			const model = ctx.model;
+			if (!model) {
 				ctx.ui.notify("No model selected", "error");
 				return;
 			}
@@ -93,12 +94,16 @@ export default function handoffExtension(pi: ExtensionAPI): void {
 			let generationError: string | undefined;
 			const generated = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
 				const loader = new BorderedLoader(tui, theme, "Generating focused handoff...");
-				loader.onAbort = () => done(null);
+				let settled = false;
+				const finish = (value: string | null) => {
+					if (settled) return;
+					settled = true;
+					done(value);
+				};
+				loader.onAbort = () => finish(null);
 				const run = async () => {
-					const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
-					if (!auth.ok || !auth.apiKey) throw new Error(auth.ok ? `No API key for ${ctx.model!.provider}` : auth.error);
-					const response = await complete(
-						ctx.model!,
+					const response = await ctx.modelRegistry.complete(
+						model,
 						{
 							systemPrompt: HANDOFF_SYSTEM_PROMPT,
 							messages: [{
@@ -110,17 +115,23 @@ export default function handoffExtension(pi: ExtensionAPI): void {
 								timestamp: Date.now(),
 							}],
 						},
-						{ apiKey: auth.apiKey, headers: auth.headers, env: auth.env, signal: loader.signal },
+						{ signal: loader.signal, cacheRetention: "none", sessionId: uuidv7() },
 					);
-					if (response.stopReason === "aborted") return null;
-					return response.content
+					if (loader.signal.aborted || response.stopReason === "aborted") return null;
+					if (response.stopReason === "error") throw new Error(response.errorMessage || "Model generation failed.");
+					const text = response.content
 						.filter((item): item is { type: "text"; text: string } => item.type === "text")
 						.map((item) => item.text)
-						.join("\n");
+						.join("\n")
+						.trim();
+					if (!text) throw new Error("Model returned an empty handoff prompt.");
+					return text;
 				};
-				run().then(done).catch((error) => {
-					generationError = error instanceof Error ? error.message : String(error);
-					done(null);
+				run().then(finish).catch((error) => {
+					if (!settled && !loader.signal.aborted) {
+						generationError = error instanceof Error ? error.message : String(error);
+					}
+					finish(null);
 				});
 				return loader;
 			});

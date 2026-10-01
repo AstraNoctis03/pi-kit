@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 开发依赖固定到 Pi 0.99.2 / TypeBox 1.3.27，CI 增加 Windows 与 Ubuntu 双平台验证。
+- Safety Guard 阻止尚未支持的独立 PowerShell 工具；Review 与 SSH 各自保留独立拦截，避免重新启用或嵌套调用时绕过策略、误执行本地命令。
+- Custom Footer 缓存会话统计与上下文用量，减少长会话流式重绘开销；补计缓存预热、压缩、分支摘要及工具结果的 usage，保持最近 Assistant 的缓存命中率口径。
+- Handoff 改用 Pi 官方模型调用入口统一处理认证，使用独立请求会话；补充生成失败、空正文、取消和延迟完成的保护与测试。
 - Session 名称自动保留 `[LOCAL]` 或 `[SSH hostname:directory]` 目标前缀；SSH 使用远端实际短主机名统一公网/内网连接别名，便于在 `/resume` 中稳定区分和搜索执行目标。
 - CI 仅在 main Push 与 Pull Request 运行，避免发布 Tag 重复执行同一套检查。
 

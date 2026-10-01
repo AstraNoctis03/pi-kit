@@ -7,6 +7,7 @@ import presetsExtension from "../extensions/presets/index.ts";
 import { DEFAULT_PRESETS, parsePresets } from "../extensions/presets/config.ts";
 import { reviewCommandDecision } from "../extensions/presets/review-policy.ts";
 import sensitivePaths from "../extensions/sensitive-paths/index.ts";
+import safetyGuard from "../extensions/safety-guard/index.ts";
 import { SafetyDialog } from "../extensions/safety-guard/dialog.ts";
 import {
 	DEFAULT_CONFIRMATION_COLORS,
@@ -110,7 +111,7 @@ function createPiMock() {
 	const commands = new Map();
 	const statuses = new Map();
 	const entries = [];
-	const allTools = ["read", "bash", "edit", "write", "grep", "find", "ls", "exa_search"];
+	const allTools = ["read", "bash", "edit", "write", "grep", "find", "ls", "exa_search", "powershell"];
 	let activeTools = [...allTools];
 	let thinkingLevel = "medium";
 	return {
@@ -167,12 +168,37 @@ const reviewGuard = presetMock.handlers.get("tool_call")[0];
 assert.equal(await reviewGuard({ toolName: "bash", input: { command: "git diff --check" } }, { ...presetMock.ctx, hasUI: true }), undefined);
 assert.equal((await reviewGuard({ toolName: "bash", input: { command: "rm file" } }, { ...presetMock.ctx, hasUI: true })).block, true);
 assert.equal((await reviewGuard({ toolName: "write", input: { path: "file", content: "x" } }, { ...presetMock.ctx, hasUI: true })).block, true);
+// Even if another extension re-enables PowerShell, Review must block its calls.
+for (const parentToolCallId of [undefined, "codemode-parent"]) {
+	const decision = await reviewGuard({
+		toolName: "powershell", input: { command: "Remove-Item ./fixture -Recurse" }, parentToolCallId,
+	}, { ...presetMock.ctx, hasUI: false });
+	assert.equal(decision.block, true);
+	assert.match(decision.reason, /PowerShell/);
+}
 await presetMock.commands.get("preset").handler("none", presetMock.ctx);
 assert.equal(presetMock.statuses.get("preset"), "preset:review");
 await presetMock.commands.get("preset").handler("normal", presetMock.ctx);
-assert.deepEqual(presetMock.activeTools, ["read", "bash", "edit", "write", "grep", "find", "ls", "exa_search"]);
+assert.deepEqual(presetMock.activeTools, ["read", "bash", "edit", "write", "grep", "find", "ls", "exa_search", "powershell"]);
+assert.equal(await reviewGuard({ toolName: "powershell", input: { command: "Get-Location" } }, presetMock.ctx), undefined,
+	"Normal preset leaves PowerShell policy to Safety Guard");
 assert.equal(presetMock.thinkingLevel, "medium");
 assert.equal(presetMock.statuses.has("preset"), false);
+
+const safetyMock = createPiMock();
+safetyGuard(safetyMock.api);
+const safetyHandler = safetyMock.handlers.get("tool_call")[0];
+for (const command of ["Get-Location", "Remove-Item ./fixture -Recurse", "git push"]) {
+	for (const hasUI of [true, false]) {
+		const decision = await safetyHandler({
+			toolName: "powershell", input: { command }, parentToolCallId: "codemode-parent",
+		}, { ...safetyMock.ctx, hasUI });
+		assert.equal(decision.block, true, "Unsupported PowerShell must fail closed without trying a Bash parser");
+		assert.match(decision.reason, /guarded bash/);
+	}
+}
+assert.equal(await safetyHandler({ toolName: "bash", input: { command: "git status" } }, safetyMock.ctx), undefined);
+assert.equal(await safetyHandler({ toolName: "read", input: { path: "README.md" } }, safetyMock.ctx), undefined);
 
 const guardMock = createPiMock();
 sensitivePaths(guardMock.api);

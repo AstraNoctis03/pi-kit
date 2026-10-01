@@ -127,6 +127,9 @@ export default function presetsExtension(pi: ExtensionAPI): void {
 
 	pi.on("tool_call", async (event, ctx) => {
 		if (activeName !== "review") return undefined;
+		if (isToolCallEventType("powershell", event)) {
+			return { block: true, reason: "Review preset does not support PowerShell; use the read-only bash allowlist instead." };
+		}
 		if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
 			return { block: true, reason: "Review preset is read-only; file mutation tools are disabled." };
 		}

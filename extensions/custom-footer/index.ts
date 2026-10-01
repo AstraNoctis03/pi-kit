@@ -135,12 +135,7 @@ function targetColumns(
 	return { left, right };
 }
 
-function statsColumns(
-	ctx: ExtensionContext,
-	theme: Theme,
-	colors: FooterColors,
-	autoCompaction: boolean,
-): { left: string; right: string } {
+function readSessionStats(ctx: ExtensionContext) {
 	let input = 0;
 	let output = 0;
 	let cacheRead = 0;
@@ -148,17 +143,34 @@ function statsColumns(
 	let cost = 0;
 	let latestCacheHitRate: number | undefined;
 	for (const entry of ctx.sessionManager.getEntries()) {
-		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-		const usage = entry.message.usage;
+		const usage = entry.type === "usage" || entry.type === "compaction" || entry.type === "branch_summary"
+			? entry.usage
+			: entry.type === "message" && (entry.message.role === "assistant" || entry.message.role === "toolResult")
+				? entry.message.usage
+				: undefined;
+		if (!usage) continue;
 		input += usage.input;
 		output += usage.output;
 		cacheRead += usage.cacheRead;
 		cacheWrite += usage.cacheWrite;
 		cost += usage.cost.total;
-		const latestPrompt = usage.input + usage.cacheRead + usage.cacheWrite;
-		latestCacheHitRate = latestPrompt > 0 ? usage.cacheRead / latestPrompt * 100 : undefined;
+		// Cache hit rate describes the latest assistant prompt, not auxiliary calls.
+		if (entry.type === "message" && entry.message.role === "assistant") {
+			const latestPrompt = usage.input + usage.cacheRead + usage.cacheWrite;
+			latestCacheHitRate = latestPrompt > 0 ? usage.cacheRead / latestPrompt * 100 : undefined;
+		}
 	}
+	return { input, output, cacheRead, cacheWrite, cost, latestCacheHitRate, contextUsage: ctx.getContextUsage() };
+}
 
+function statsColumns(
+	ctx: ExtensionContext,
+	theme: Theme,
+	colors: FooterColors,
+	autoCompaction: boolean,
+	stats: ReturnType<typeof readSessionStats>,
+): { left: string; right: string } {
+	const { input, output, cacheRead, cacheWrite, cost, latestCacheHitRate, contextUsage: usage } = stats;
 	const parts = [`↑${formatTokens(input)}`, `↓${formatTokens(output)}`];
 	if (cacheRead) parts.push(`R${formatTokens(cacheRead)}`);
 	if (cacheWrite) parts.push(`W${formatTokens(cacheWrite)}`);
@@ -167,7 +179,6 @@ function statsColumns(
 	if (cost || subscription) parts.push(`$${cost.toFixed(3)}${subscription ? "(sub)" : ""}`);
 	const left = theme.fg("dim", parts.join(" "));
 
-	const usage = ctx.getContextUsage();
 	const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 	const percent = usage?.percent;
 	const display = percent === null || percent === undefined ? "?" : `${percent.toFixed(1)}%`;
@@ -186,15 +197,30 @@ function installFooter(
 	colors: FooterColors,
 	autoCompaction: boolean,
 	thinkingLevel: () => ThinkingLevel,
-): void {
+): () => void {
+	let invalidateStats = () => {};
 	ctx.ui.setFooter((tui, theme, footerData) => {
 		const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+		let cached: {
+			sessionId: string;
+			leafId: string | null;
+			model: ExtensionContext["model"];
+			stats: ReturnType<typeof readSessionStats>;
+		} | undefined;
+		invalidateStats = () => { cached = undefined; };
 		return {
 			dispose: unsubscribe,
-			invalidate() {},
+			invalidate: invalidateStats,
 			render(width: number): string[] {
+				const sessionId = ctx.sessionManager.getSessionId();
+				const leafId = ctx.sessionManager.getLeafId();
+				// Public session APIs are append-only: each append moves the leaf.
+				// Avoid copying/scanning the transcript on every streaming frame.
+				if (!cached || cached.sessionId !== sessionId || cached.leafId !== leafId || cached.model !== ctx.model) {
+					cached = { sessionId, leafId, model: ctx.model, stats: readSessionStats(ctx) };
+				}
 				const target = targetColumns(ctx, footerData, theme, colors, thinkingLevel());
-				const stats = statsColumns(ctx, theme, colors, autoCompaction);
+				const stats = statsColumns(ctx, theme, colors, autoCompaction, cached.stats);
 				const lines = [
 					alignColumns(target.left, target.right, width),
 					alignColumns(stats.left, stats.right, width),
@@ -209,22 +235,26 @@ function installFooter(
 			},
 		};
 	});
+	return () => invalidateStats();
 }
 
 export default function customFooter(pi: ExtensionAPI): void {
 	let colors = structuredClone(DEFAULT_FOOTER_COLORS);
 	let autoCompaction = true;
+	let invalidateStats = () => {};
 
 	const loadAndInstall = (ctx: ExtensionContext) => {
 		const configPath = footerColorsPath();
 		const loaded = loadColors(configPath);
 		colors = loaded.colors;
 		autoCompaction = compactionEnabled(ctx);
-		installFooter(ctx, colors, autoCompaction, () => pi.getThinkingLevel() as ThinkingLevel);
+		invalidateStats = installFooter(ctx, colors, autoCompaction, () => pi.getThinkingLevel() as ThinkingLevel);
 		if (loaded.error) ctx.ui.notify(`Footer color config is invalid; using defaults: ${loaded.error}`, "warning");
 	};
 
 	pi.on("session_start", async (_event, ctx) => loadAndInstall(ctx));
+	// Returning to the same leaf can still add usage on an abandoned branch.
+	pi.on("session_tree", async () => invalidateStats());
 	pi.on("session_shutdown", async (_event, ctx) => ctx.ui.setFooter(undefined));
 
 	pi.registerCommand("footer-colors", {

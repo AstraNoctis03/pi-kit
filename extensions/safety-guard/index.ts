@@ -5,8 +5,8 @@ import {
 	type ToolCallEventResult,
 	type UserBashEventResult,
 } from "@earendil-works/pi-coding-agent";
-import { showSafetyConfirmation, type SafetyConfirmationResult } from "./dialog";
-import { findCommandDecision, findToolPathDecision, type GuardDecision } from "./policy";
+import { showSafetyConfirmation, type SafetyConfirmationResult } from "./dialog.ts";
+import { findCommandDecision, findToolPathDecision, type GuardDecision } from "./policy.ts";
 
 function blockedMessage(decision: GuardDecision): string {
 	return `Safety Guard blocked this operation (${decision.ruleName}): ${decision.reason}`;
@@ -65,6 +65,9 @@ async function guardUserBash(
 
 export default function safetyGuard(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event, ctx) => {
+		if (isToolCallEventType("powershell", event)) {
+			return { block: true, reason: "Safety Guard does not support the powershell tool; use the guarded bash tool instead." };
+		}
 		if (isToolCallEventType("bash", event)) {
 			const command = event.input.command.trim();
 			const decision = findCommandDecision(command);

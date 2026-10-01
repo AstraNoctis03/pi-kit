@@ -458,6 +458,15 @@ export default function sshRemote(pi: ExtensionAPI): void {
 		}
 	});
 
+	// PowerShell is a separate local tool, not part of the SSH transport.
+	// Check the flag directly so even an initialization failure cannot expose it.
+	pi.on("tool_call", async (event) => {
+		if (event.toolName === "powershell" && pi.getFlag("ssh")) {
+			return { block: true, reason: "SSH mode blocks the local powershell tool; use bash to execute on the remote server." };
+		}
+		return undefined;
+	});
+
 	pi.on("user_bash", async () => {
 		if (!requested) return undefined;
 		if (!session) {

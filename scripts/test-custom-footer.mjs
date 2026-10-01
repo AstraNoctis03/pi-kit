@@ -66,16 +66,23 @@ const entries = [
 	},
 ];
 let sessionName;
+let sessionId = "session-1";
+let leafId = "leaf-1";
+let entryReads = 0;
+let contextReads = 0;
+let contextUsage = { tokens: 165_540, contextWindow: 372_000, percent: 44.5 };
 const ctx = {
 	cwd: path.join(homedir(), "pi-kit"),
 	model: { id: "gpt-5.6-sol", provider: "openai-codex", reasoning: true, contextWindow: 372_000 },
 	modelRegistry: { isUsingOAuth: () => true },
 	isProjectTrusted: () => false,
-	getContextUsage: () => ({ tokens: 165_540, contextWindow: 372_000, percent: 44.5 }),
+	getContextUsage: () => { contextReads += 1; return contextUsage; },
 	sessionManager: {
 		getCwd: () => path.join(homedir(), "pi-kit"),
 		getSessionName: () => sessionName,
-		getEntries: () => entries,
+		getSessionId: () => sessionId,
+		getLeafId: () => leafId,
+		getEntries: () => { entryReads += 1; return entries; },
 	},
 	ui: {
 		setFooter(factory) { footerFactory = factory; },
@@ -101,6 +108,10 @@ assert.ok(lines.every((line) => visibleWidth(line) <= 80));
 assert.match(stripAnsi(lines[0]), /LOCAL .*pi-kit \(main\).*gpt-5\.6-sol.*high/);
 assert.match(stripAnsi(lines[1]), /↑281k ↓58k R12M CH99\.6% \$9\.059\(sub\).*ctx 44\.5%\/372k auto/);
 
+for (let index = 0; index < 100; index += 1) component.render(80);
+assert.equal(entryReads, 1, "Unchanged frames must not rescan the session");
+assert.equal(contextReads, 1, "Unchanged frames must not recompute context usage");
+
 sessionName = "release validation";
 statuses.set("preset", "preset:review");
 lines = component.render(80);
@@ -120,6 +131,56 @@ assert.match(stripAnsi(lines[0]), /SSH s1d:\/home\/xjmao.*gpt-5\.6-sol.*high/);
 assert.doesNotMatch(stripAnsi(lines[0]), /\(main\)/);
 lines = component.render(16);
 assert.match(stripAnsi(lines[0]), /^SSH /, "Narrow footers should preserve the remote target indicator");
+
+const auxiliaryUsage = (cost) => ({
+	input: 10, output: 20, cacheRead: 30, cacheWrite: 40, cost: { total: cost },
+});
+entries.push(
+	{ type: "usage", kind: "cache_warm", usage: auxiliaryUsage(1) },
+	{ type: "compaction", usage: auxiliaryUsage(2) },
+	{ type: "branch_summary", usage: auxiliaryUsage(3) },
+	{ type: "message", message: { role: "toolResult", usage: auxiliaryUsage(4) } },
+	{ type: "message", message: { role: "toolResult" } },
+	{ type: "compaction" },
+	{ type: "custom", data: { usage: auxiliaryUsage(999) } },
+);
+leafId = "leaf-2";
+lines = component.render(120);
+assert.equal(entryReads, 2, "Appending entries must invalidate statistics");
+assert.match(stripAnsi(lines[1]), /↑281k ↓58k R12M W160 CH99\.6% \$19\.059/,
+	"Include auxiliary usage exactly once without changing the assistant cache hit rate");
+
+contextUsage = { tokens: undefined, contextWindow: 372_000, percent: null };
+leafId = "branch-leaf";
+lines = component.render(120);
+assert.equal(entryReads, 3, "Branch navigation must invalidate statistics");
+assert.match(stripAnsi(lines[1]), /ctx \?\/372k/);
+assert.match(stripAnsi(lines[1]), /\$19\.059/, "Totals include all branches, like the native footer");
+
+ctx.model = { ...ctx.model, id: "other-model", contextWindow: 1_000_000 };
+contextUsage = { tokens: 100_000, contextWindow: 1_000_000, percent: 10 };
+lines = component.render(120);
+assert.equal(entryReads, 4, "Model changes must invalidate cached context limits");
+assert.match(stripAnsi(lines[1]), /ctx 10\.0%\/1\.0M/);
+
+// The same leaf ID in another session must not reuse old totals.
+entries.splice(0);
+sessionId = "session-2";
+lines = component.render(120);
+assert.equal(entryReads, 5);
+assert.match(stripAnsi(lines[1]), /↑0 ↓0 \$0\.000/);
+assert.doesNotMatch(stripAnsi(lines[1]), /CH/);
+// A branch can gain usage and return to the same leaf between two frames.
+entries.push({ type: "usage", usage: auxiliaryUsage(1) });
+await handlers.get("session_tree")[0]({}, ctx);
+lines = component.render(120);
+assert.equal(entryReads, 6);
+assert.match(stripAnsi(lines[1]), /\$1\.000/, "Tree events must invalidate even when the leaf ID is unchanged");
+component.invalidate();
+component.render(120);
+assert.equal(entryReads, 7, "Explicit invalidation must clear cached statistics");
+component.render(40);
+assert.equal(entryReads, 7, "Width-only rendering must reuse raw statistics");
 
 component.dispose();
 console.log("test:footer ok");

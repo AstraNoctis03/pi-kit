@@ -17,6 +17,8 @@
 
 ## 安装
 
+当前开发分支以 **Pi 0.99.2 / Node.js 24** 为验证基线，Pi 开发依赖固定为 0.99.2；不保证旧版 Pi 兼容。宿主提供的包按官方约定保留 `peerDependencies: "*"`，不作为运行时依赖重复安装。
+
 本地目录：
 
 ```bash
@@ -41,6 +43,7 @@ pi --no-extensions --no-skills \
 
 直接阻止：
 
+- 独立的 `powershell` 工具（尚无 PowerShell 安全策略，统一阻止；改用受保护的 `bash`）
 - `rm -rf /` 和递归删除 home
 - 在 WSL/Linux 中通过工具或 Shell 写入 `/mnt/c`、`/mnt/d`、`C:\`、`D:\`
 
@@ -116,7 +119,7 @@ pi --ssh s1d:/home/xjmao/project
 pi --ssh mgt01d
 ```
 
-远程模式会禁用 SSH 配置中的 `LocalForward`，避免并行工具调用争用本地转发端口。连接失败后工具会保持 fail-closed，不会退回本地执行。使用 `/ssh-status` 查看当前目标。
+远程模式会禁用 SSH 配置中的 `LocalForward`，避免并行工具调用争用本地转发端口。连接失败后工具会保持 fail-closed，不会退回本地执行。独立的 `powershell` 工具不属于 SSH 传输范围，在 SSH 模式始终阻止（即使未加载 Safety Guard），避免误执行本地命令。使用 `/ssh-status` 查看当前目标。
 
 Session 名称会自动带上执行目标，例如 `[LOCAL] 修复登录测试` 或 `[SSH compute-01:project] 修复登录测试`，因此可在 `/resume` 中直接区分并搜索本地、服务器和项目。SSH 标签使用远端机器报告的短主机名，而不是连接别名，所以 `s1`、`s1d` 等公网/内网别名连接同一台机器时名称保持一致；探测不到主机名时才回退到 SSH 别名。使用 `/name` 重命名当前 Session 时目标前缀会自动保留；旧 Session 或在选择器中通过 `Ctrl+R` 改名的 Session 会在下次载入时补上当前目标前缀。
 
@@ -150,7 +153,7 @@ setx EXA_API_KEY "your-api-key"
 - 启用 `read`、`bash`、`grep`、`find`、`ls`、`exa_search`
 - Bash 只允许 Git 只读、文件检查、测试、lint 和类型检查命令
 - 阻止 Shell 重定向、命令链、文件修改、依赖变更和 Git 写操作
-- `write` / `edit` 即使被其他配置重新启用也会被拦截
+- `write` / `edit` / `powershell` 即使被其他配置重新启用也会被拦截；直接调用和经 `ctx.executeTool()` 嵌套调用遵循相同规则
 
 Review 的 Bash 限制是静态白名单而非操作系统沙箱；已阻止已知输出文件、外部 helper、重定向和修复参数，但获准的项目测试脚本仍可能按项目自身逻辑生成缓存或构建产物。最终只读保证仍应结合只读工作区或容器。
 
@@ -191,7 +194,7 @@ pi --preset review
 /handoff 继续实现下一阶段并运行相关测试
 ```
 
-Handoff 会使用当前模型总结相关上下文，允许编辑生成结果，然后创建带父会话关联的新 Session，并使用 `/handoff` 后的目标自动命名（最长 60 个字符）。它会额外产生一次模型调用；本地模式下如果 Dirty Repo Guard 检测到未提交改动，切换前仍会要求确认。
+Handoff 会使用当前模型总结相关上下文，允许编辑生成结果，然后创建带父会话关联的新 Session，并使用 `/handoff` 后的目标自动命名（最长 60 个字符）。它通过 Pi 的 `modelRegistry.complete()` 额外产生一次模型调用，由 Pi 统一处理认证（不强制要求 API Key），使用独立请求会话并关闭该次调用的缓存保留。生成错误、空正文或取消不会创建新会话；本地模式下如果 Dirty Repo Guard 检测到未提交改动，切换前仍会要求确认。
 
 ## Dirty Repo Guard
 
@@ -222,6 +225,8 @@ Footer 使用两行布局：
 LOCAL ~/pi-kit (main)                     gpt-5.6-sol • high
 ↑281k ↓58k R12M CH99.6% $9.059(sub)       ctx 44.5%/372k auto
 ```
+
+统计缓存按会话、当前历史节点和模型复用，避免流式输出的每帧都扫描全部历史；导航和显式失效时重新计算。累计用量与 Pi 原生 Footer 保持相同口径，包含所有分支中已记录的 Assistant、工具调用、压缩、分支摘要及缓存预热用量；`CH` 仍表示最近一次 Assistant 请求的缓存命中率，不含 Exa 等外部服务的独立费用。
 
 SSH 模式会将第一行目标切换为 `SSH alias:/remote/path`，避免混淆本地与远程操作。颜色可以通过以下文件覆盖：
 
@@ -308,7 +313,15 @@ npm test
 git diff --check
 ```
 
-GitHub Actions 使用 Node.js 24，在 Push 与 Pull Request 中自动运行同一套检查。
+GitHub Actions 使用 Node.js 24，在 Ubuntu 和 Windows 上于 main Push 与 Pull Request 中自动运行同一套检查。
+
+长会话发生滚动跳转时，可先临时比较 Pi 原生 fullscreen 模式，无需修改全局配置或安装扩展：
+
+```bash
+pi --tui-mode fullscreen
+```
+
+Fullscreen 使用固定输入区和 Footer，以及独立滚动的历史区域；终端交互效果仍需在实际终端中验证。
 
 ## License
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import dirtyRepoGuard from "../extensions/dirty-repo-guard/index.ts";
 import handoffExtension, { handoffMessages, handoffSessionName } from "../extensions/handoff/index.ts";
 import { titleTarget } from "../extensions/titlebar-spinner/index.ts";
@@ -70,6 +71,116 @@ handoffCtx.ui.editor = async () => undefined;
 await handoffCommands.get("handoff").handler("cancelled handoff", handoffCtx);
 assert.equal(newSessionCalls, 1, "Cancelling the handoff editor must not create a session");
 assert.ok(handoffNotifications.some(({ message }) => message === "Handoff cancelled"));
+
+// Exercise the actual generation callback and official loader, not just a canned UI result.
+initTheme("dark", false);
+function generationHarness(complete, { cancel = false, switchCancelled = false } = {}) {
+	const state = { requests: [], notifications: [], doneCalls: 0, editorCalls: 0, sessionCalls: 0 };
+	const ctx = {
+		...handoffCtx,
+		// No API key or getApiKeyAndHeaders: authentication belongs to ModelRegistry.
+		modelRegistry: {
+			async complete(model, context, options) {
+				state.requests.push({ model, context, options });
+				return complete(model, context, options);
+			},
+		},
+		ui: {
+			async custom(factory) {
+				let component;
+				try {
+					return await new Promise((resolve) => {
+						component = factory(
+							{ requestRender() {} },
+							{ fg: (_color, text) => text },
+							{},
+							(value) => { state.doneCalls += 1; resolve(value); },
+						);
+						if (cancel) queueMicrotask(() => component.handleInput("\x1b"));
+					});
+				} finally {
+					component?.dispose();
+				}
+			},
+			editor: async (_title, draft) => { state.editorCalls += 1; state.draft = draft; return draft; },
+			notify(message, level) { state.notifications.push({ message, level }); },
+		},
+		async newSession(options) {
+			state.sessionCalls += 1;
+			if (switchCancelled) return { cancelled: true };
+			await options.setup({ appendSessionInfo() {} });
+			await options.withSession({ ui: { setEditorText() {}, notify() {} } });
+			return { cancelled: false };
+		},
+	};
+	return { state, run: () => handoffCommands.get("handoff").handler("Next goal", ctx) };
+}
+
+const successResponse = {
+	stopReason: "stop",
+	content: [{ type: "thinking", thinking: "private reasoning" }, { type: "text", text: "  Generated prompt  " }],
+};
+const success = generationHarness(async () => successResponse);
+await success.run();
+assert.equal(success.state.draft, "Generated prompt");
+assert.equal(success.state.sessionCalls, 1);
+assert.equal(success.state.doneCalls, 1);
+const request = success.state.requests[0];
+assert.equal(request.model, handoffCtx.model);
+assert.match(request.context.systemPrompt, /transfer a coding session/);
+assert.match(request.context.messages[0].content[0].text, /Existing context/);
+assert.match(request.context.messages[0].content[0].text, /Next goal/);
+assert.equal(request.options.cacheRetention, "none");
+assert.ok(request.options.signal instanceof AbortSignal);
+assert.equal(request.options.signal.aborted, false);
+assert.equal(typeof request.options.sessionId, "string");
+assert.equal("apiKey" in request.options, false);
+await success.run();
+assert.notEqual(success.state.requests[1].options.sessionId, request.options.sessionId);
+
+for (const [response, expected] of [
+	[{ stopReason: "error", errorMessage: "Provider unavailable", content: [] }, /Provider unavailable/],
+	[{ stopReason: "error", content: [{ type: "text", text: "Partial output" }] }, /Model generation failed/],
+	[{ stopReason: "stop", content: [{ type: "text", text: "  " }] }, /empty handoff prompt/],
+]) {
+	const failed = generationHarness(async () => response);
+	await failed.run();
+	assert.equal(failed.state.editorCalls, 0);
+	assert.equal(failed.state.sessionCalls, 0);
+	assert.ok(failed.state.notifications.some(({ message, level }) => level === "error" && expected.test(message)));
+}
+const rejected = generationHarness(async () => { throw new Error("Authentication failed"); });
+await rejected.run();
+assert.equal(rejected.state.sessionCalls, 0);
+assert.ok(rejected.state.notifications.some(({ message }) => /Authentication failed/.test(message)));
+
+const aborted = generationHarness(async () => ({ stopReason: "aborted", content: [] }));
+await aborted.run();
+assert.equal(aborted.state.editorCalls, 0);
+assert.ok(aborted.state.notifications.some(({ message, level }) => message === "Handoff cancelled" && level === "info"));
+
+const cancelledGeneration = generationHarness((_model, _context, { signal }) => new Promise((_resolve, reject) => {
+	signal.addEventListener("abort", () => reject(new Error("Request aborted")), { once: true });
+}), { cancel: true });
+await cancelledGeneration.run();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(cancelledGeneration.state.requests[0].options.signal.aborted, true);
+assert.equal(cancelledGeneration.state.doneCalls, 1, "Abort and request rejection must not complete the UI twice");
+assert.equal(cancelledGeneration.state.sessionCalls, 0);
+assert.equal(cancelledGeneration.state.editorCalls, 0);
+assert.ok(cancelledGeneration.state.notifications.every(({ level }) => level !== "error"));
+
+let resolveLate;
+const lateGeneration = generationHarness(() => new Promise((resolve) => { resolveLate = resolve; }), { cancel: true });
+await lateGeneration.run();
+resolveLate(successResponse);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(lateGeneration.state.doneCalls, 1, "Late completion after cancellation must be ignored");
+assert.equal(lateGeneration.state.sessionCalls, 0);
+
+const switchCancelled = generationHarness(async () => successResponse, { switchCancelled: true });
+await switchCancelled.run();
+assert.ok(switchCancelled.state.notifications.some(({ message }) => message === "Handoff session change cancelled"));
 
 assert.equal(
 	titleTarget({ getFlag: () => "s1d:/home/xjmao/project" }, { cwd: "C:/local" }),

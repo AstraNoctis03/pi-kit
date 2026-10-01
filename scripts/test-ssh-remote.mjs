@@ -93,6 +93,8 @@ await localHandlers.get("before_agent_start")[0]({ prompt: "Fix the failing test
 assert.equal(localSessionName, "[LOCAL] Fix the failing tests");
 await localHandlers.get("session_info_changed")[0]({ name: "Release prep" }, localContext);
 assert.equal(localSessionName, "[LOCAL] Release prep");
+assert.equal(await localHandlers.get("tool_call")[0]({ toolName: "powershell" }, localContext), undefined,
+	"SSH extension alone must not restrict local sessions");
 
 const handlers = new Map();
 const tools = new Map();
@@ -118,6 +120,9 @@ const mockContext = {
 	},
 };
 sshRemote(mockPi);
+const sshToolGuard = handlers.get("tool_call")[0];
+assert.equal((await sshToolGuard({ toolName: "powershell" }, mockContext)).block, true,
+	"Block local PowerShell even before SSH initialization");
 await assert.rejects(
 	() => handlers.get("session_start")[0]({ reason: "startup" }, mockContext),
 	/SSH target must be an SSH config alias/,
@@ -127,5 +132,15 @@ await assert.rejects(
 	() => tools.get("read").execute("test", { path: "README.md" }, undefined, undefined, mockContext),
 	/SSH mode unavailable/,
 );
+
+for (const parentToolCallId of [undefined, "codemode-parent"]) {
+	const decision = await sshToolGuard({ toolName: "powershell", parentToolCallId }, mockContext);
+	assert.equal(decision.block, true, "SSH failure must never fall back to local PowerShell");
+}
+assert.equal(await sshToolGuard({ toolName: "bash" }, mockContext), undefined,
+	"Bash remains handled by the fail-closed remote transport");
+mockPi.getFlag = () => "test-host:/srv/project";
+assert.equal((await sshToolGuard({ toolName: "powershell" }, mockContext)).block, true,
+	"Valid SSH targets must also block local PowerShell without a live connection");
 
 console.log("test:ssh ok");
