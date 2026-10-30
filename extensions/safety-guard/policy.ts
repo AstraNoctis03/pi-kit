@@ -23,6 +23,7 @@ const WINDOWS_WRITE_COMMANDS = new Set([
 export function findCommandDecision(command: string, platform = process.platform): GuardDecision | undefined {
 	const segments = splitCommandSegments(command);
 	let protectedCwd = false;
+	let confirmation: GuardDecision | undefined;
 
 	for (const segment of segments) {
 		const parsed = parseCommand(segment);
@@ -41,11 +42,11 @@ export function findCommandDecision(command: string, platform = process.platform
 			return decision("block", "windows-path-write", "Writing to Windows-mounted paths from WSL/Linux is blocked.");
 		}
 
-		const confirmation = findConfirmation(parsed) ?? (effective === parsed ? undefined : findConfirmation(effective));
-		if (confirmation) return confirmation;
+		// Continue scanning: a later hard block must outrank an earlier confirmation.
+		confirmation ??= findConfirmation(parsed) ?? (effective === parsed ? undefined : findConfirmation(effective));
 	}
 
-	return undefined;
+	return confirmation;
 }
 
 export function findToolPathDecision(path: string, platform = process.platform): GuardDecision | undefined {

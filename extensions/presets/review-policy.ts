@@ -17,9 +17,21 @@ function shellOperators(command: string): boolean {
 	let quote: "'" | '"' | undefined;
 	for (let index = 0; index < command.length; index += 1) {
 		const character = command[index];
-		if (quote) {
-			if (character === quote && command[index - 1] !== "\\") quote = undefined;
-			if (quote === '"' && character === "$" && command[index + 1] === "(") return true;
+		if (quote === "'") {
+			if (character === "'") quote = undefined;
+			continue; // Single quotes treat backticks, dollars and backslashes literally.
+		}
+		if (character === "\\") {
+			const next = command[index + 1];
+			if (next === undefined) return true;
+			// Inside double quotes only these characters can be escaped. Consume pairs
+			// so an even number of backslashes cannot hide an active substitution.
+			if (!quote || ['$', '`', '"', "\\", "\n"].includes(next)) index += 1;
+			continue;
+		}
+		if (quote === '"') {
+			if (character === '"') quote = undefined;
+			else if (character === "`" || (character === "$" && command[index + 1] === "(")) return true;
 			continue;
 		}
 		if (character === "'" || character === '"') {

@@ -25,6 +25,13 @@ const { findCommandDecision, findToolPathDecision } = loadedModule.exports;
 
 const commandCases = [
 	["rm -rf /", "linux", "block", "rm-root"],
+	["npm install && rm -rf /", "linux", "block", "rm-root"],
+	["rm sample.txt; rm -rf /", "linux", "block", "rm-root"],
+	["sudo echo checked | rm -rf /", "linux", "block", "rm-root"],
+	["npm install || rm -rf $HOME", "linux", "block", "rm-home"],
+	["npm install\nrm -rf /", "linux", "block", "rm-root"],
+	["npm install && echo data > /mnt/c/target", "linux", "block", "windows-path-write"],
+	["rm file.txt && npm install", "linux", "confirm", "delete"],
 	["sudo rm -rf $HOME", "linux", "block", "rm-home"],
 	["sudo -u root rm -rf /", "linux", "block", "rm-root"],
 	["env LC_ALL=C rm -rf /", "linux", "block", "rm-root"],

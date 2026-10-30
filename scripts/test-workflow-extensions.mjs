@@ -76,6 +76,14 @@ assert.equal(reviewCommandDecision("git --paginate status").allowed, false);
 assert.equal(reviewCommandDecision("git -p status").allowed, false);
 assert.equal(reviewCommandDecision("git status && rm file").allowed, false);
 assert.equal(reviewCommandDecision("echo data > file").allowed, false);
+// Classify these strings only: no shell command substitution is executed by the tests.
+for (const command of ['cat "`touch REVIEW_MARKER`"', 'ls "`printf .`"', 'cat "$(touch REVIEW_MARKER)"',
+	'cat "prefix\\\\`touch REVIEW_MARKER`"']) {
+	assert.equal(reviewCommandDecision(command).allowed, false, `Block substitution inside double quotes: ${command}`);
+}
+assert.equal(reviewCommandDecision("cat '`literal filename`'").allowed, true, "Backticks in single quotes are literal data");
+assert.equal(reviewCommandDecision('cat "\\\\`touch REVIEW_MARKER\\\\`"').allowed, false, "An even number of backslashes does not escape substitution");
+assert.equal(reviewCommandDecision('cat "\\`literal filename\\`"').allowed, true, "Escaped backticks inside double quotes are literal");
 
 assert.ok(globToRegExp("**/.git/**").test("C:/project/.git/config"));
 assert.equal(classifySensitivePath("C:/project/.git/config")?.action, "block");
@@ -171,7 +179,7 @@ function createPiMock(flags = {}) {
 			model: undefined,
 			modelRegistry: { find: () => undefined },
 			isProjectTrusted: () => false,
-			sessionManager: { getBranch: () => [], getEntries: () => [] },
+			sessionManager: { getBranch: () => [], getEntries: () => entries.map((entry) => ({ type: "custom", ...entry })) },
 			ui: {
 				theme: { fg: (_color, text) => text },
 				setStatus(key, value) { value === undefined ? statuses.delete(key) : statuses.set(key, value); },

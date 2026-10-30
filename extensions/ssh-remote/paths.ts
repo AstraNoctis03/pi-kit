@@ -44,6 +44,17 @@ export class RemotePathMapper {
 		return path.posix.resolve(this.remoteCwd, value.replace(/\\/g, "/"));
 	}
 
+	// Interpret user input on the remote before a built-in tool normalizes it
+	// against its local ExtensionContext (including ../ and ~ paths).
+	toToolInput(input: string): string {
+		const value = input.trim().replace(/^@/, "");
+		if (process.platform === "win32" && path.win32.isAbsolute(value) && !path.posix.isAbsolute(value)) {
+			if (value.startsWith("\\\\")) throw new Error(`UNC paths are not supported in SSH mode: ${input}`);
+			return path.win32.normalize(value); // Preserve already-encoded native absolute paths.
+		}
+		return this.toToolPath(this.resolveRemoteInput(value));
+	}
+
 	toRemotePath(toolPath: string): string {
 		const absolute = path.resolve(toolPath);
 		const workspaceRelative = isInside(this.syntheticCwd, absolute);

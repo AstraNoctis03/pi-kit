@@ -43,3 +43,36 @@ jobs:
 
       - name: Check patch whitespace
         run: git diff --check
+
+  integration-current:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        pi: ["1.4.0"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Install isolated Pi host
+        shell: pwsh
+        run: |
+          $hostRoot = Join-Path $env:RUNNER_TEMP "pi-kit-host"
+          npm install --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --prefix "$hostRoot" "@earendil-works/pi-coding-agent@${{ matrix.pi }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run actual Pi host integration tests
+        env:
+          PI_KIT_TEST_AGENT_ENTRY: ${{ runner.temp }}/pi-kit-host/node_modules/@earendil-works/pi-coding-agent/dist/index.js
+        run: npm run test:integration

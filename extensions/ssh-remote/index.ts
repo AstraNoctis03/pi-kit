@@ -1,12 +1,13 @@
 import path from "node:path";
+import { hostname } from "node:os";
 import {
-	createBashTool,
-	createEditTool,
+	createBashToolDefinition,
+	createEditToolDefinition,
 	createFindTool,
 	createGrepTool,
 	createLsTool,
-	createReadTool,
-	createWriteTool,
+	createReadToolDefinition,
+	createWriteToolDefinition,
 	DEFAULT_MAX_BYTES,
 	formatSize,
 	truncateHead,
@@ -14,6 +15,7 @@ import {
 	type BashOperations,
 	type EditOperations,
 	type ExtensionAPI,
+	type ExtensionContext,
 	type FindToolDetails,
 	type GrepToolDetails,
 	type LsToolDetails,
@@ -22,15 +24,17 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { findPathPatterns, parseSshTarget } from "./config.ts";
 import { RemotePathMapper, syntheticRemoteCwd } from "./paths.ts";
+import { readEnvironment, sameEnvironment, type SessionEnvironment } from "./environment.ts";
+import { createEnvironmentSessions } from "./environment-sessions.ts";
 import {
 	compactSessionTopic,
 	firstUserTopic,
 	sessionNameTopic,
-	sessionTargetLabel,
 	stableSessionHost,
 	targetedSessionName,
 } from "./session-label.ts";
 import { quoteShell, SshClient } from "./transport.ts";
+import { LocalSkillInstructions } from "./local-skills.ts";
 
 const DEFAULT_FIND_LIMIT = 1000;
 const DEFAULT_GREP_LIMIT = 100;
@@ -50,19 +54,22 @@ interface TextResult<T> {
 	details: T | undefined;
 }
 
-function createReadOperations(getSession: () => RemoteSession): ReadOperations {
+function createReadOperations(getSession: () => RemoteSession, localSkills?: LocalSkillInstructions): ReadOperations {
 	return {
 		readFile: async (filePath) => {
 			const { client, mapper } = getSession();
+			if (localSkills?.has(filePath)) return localSkills.readFile(filePath);
 			return (await client.run(`cat -- ${quoteShell(mapper.toRemotePath(filePath))}`)).stdout;
 		},
 		access: async (filePath) => {
 			const { client, mapper } = getSession();
+			if (localSkills?.has(filePath)) return localSkills.access(filePath);
 			await client.run(`test -r ${quoteShell(mapper.toRemotePath(filePath))}`);
 		},
 		detectImageMimeType: async (filePath) => {
 			try {
 				const { client, mapper } = getSession();
+				if (localSkills?.has(filePath)) return null; // Skill entry files are Markdown, not images.
 				const result = await client.run(`file --mime-type -b -- ${quoteShell(mapper.toRemotePath(filePath))}`);
 				const mime = result.stdout.toString("utf8").trim();
 				return ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"].includes(mime) ? mime : null;
@@ -357,19 +364,49 @@ async function executeRemoteGrep(
 	return { content: [{ type: "text", text }], details: Object.keys(details).length ? details : undefined };
 }
 
-function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, toolCwd: string): void {
-	const read = createReadTool(toolCwd, { operations: createReadOperations(getSession) });
-	const write = createWriteTool(toolCwd, { operations: createWriteOperations(getSession) });
-	const edit = createEditTool(toolCwd, { operations: createEditOperations(getSession) });
-	const bash = createBashTool(toolCwd, { operations: createBashOperations(getSession) });
+function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, toolCwd: string, localSkills: LocalSkillInstructions): void {
+	const read = createReadToolDefinition(toolCwd, { operations: createReadOperations(getSession) });
+	const skillRead = createReadToolDefinition(toolCwd, { operations: createReadOperations(getSession, localSkills) });
+	const write = createWriteToolDefinition(toolCwd, { operations: createWriteOperations(getSession) });
+	const edit = createEditToolDefinition(toolCwd, { operations: createEditOperations(getSession) });
+	const bash = createBashToolDefinition(toolCwd, { operations: createBashOperations(getSession) });
 	const ls = createLsTool(toolCwd);
 	const find = createFindTool(toolCwd);
 	const grep = createGrepTool(toolCwd);
 
-	pi.registerTool(read);
-	pi.registerTool(write);
-	pi.registerTool(edit);
-	pi.registerTool(bash);
+	pi.registerTool({
+		...read,
+		async execute(id, params, signal, onUpdate, ctx) {
+			const localInput = params.path.trim().replace(/^@/, "");
+			const context = ctx && { ...ctx, cwd: toolCwd };
+			// Decide the local exception using the original input, never an encoded
+			// remote-home path which might happen to resemble a local skill filename.
+			if (path.isAbsolute(localInput) && localSkills.has(localInput)) {
+				return skillRead.execute(id, { ...params, path: localInput }, signal, onUpdate, context);
+			}
+			return read.execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate, context);
+		},
+	});
+	pi.registerTool({
+		...write,
+		async execute(id, params, signal, onUpdate, ctx) {
+			return write.execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate,
+				ctx && { ...ctx, cwd: toolCwd });
+		},
+	});
+	pi.registerTool({
+		...edit,
+		async execute(id, params, signal, onUpdate, ctx) {
+			return edit.execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate,
+				ctx && { ...ctx, cwd: toolCwd });
+		},
+	});
+	pi.registerTool({
+		...bash,
+		async execute(id, params, signal, onUpdate, ctx) {
+			return bash.execute(id, params, signal, onUpdate, ctx && { ...ctx, cwd: toolCwd });
+		},
+	});
 	pi.registerTool({
 		...ls,
 		execute: (_id, params, signal) => executeRemoteLs(getSession(), params.path, params.limit, signal),
@@ -394,16 +431,18 @@ export default function sshRemote(pi: ExtensionAPI): void {
 		type: "string",
 	});
 
+	const localSkills = new LocalSkillInstructions();
 	let requested = false;
 	let registered = false;
 	let session: RemoteSession | undefined;
 	let startupError: string | undefined;
-	let targetLabel: string | undefined;
 	const requireSession = () => {
 		if (session) return session;
 		throw new Error(startupError ? `SSH mode unavailable: ${startupError}` : "SSH mode is not initialized.");
 	};
-	const syncSessionName = (fallbackTopic?: string) => {
+	const environments = createEnvironmentSessions(pi, (ctx) => syncSessionName(ctx, firstUserTopic(ctx.sessionManager.getEntries())));
+	const syncSessionName = (ctx: ExtensionContext, fallbackTopic?: string) => {
+		const targetLabel = environments.label(ctx);
 		if (!targetLabel) return;
 		const currentName = pi.getSessionName();
 		const topic = sessionNameTopic(currentName) || fallbackTopic;
@@ -414,13 +453,13 @@ export default function sshRemote(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		const rawTarget = pi.getFlag("ssh") as string | undefined;
 		if (!rawTarget) {
-			targetLabel = sessionTargetLabel();
-			syncSessionName(firstUserTopic(ctx.sessionManager.getEntries()));
+			environments.activate(ctx, { version: 1, kind: "local", host: hostname(), cwd: ctx.cwd });
+			if (environments.allowed(ctx)) syncSessionName(ctx, firstUserTopic(ctx.sessionManager.getEntries()));
 			return;
 		}
 		requested = true;
 		if (!registered) {
-			registerRemoteTools(pi, requireSession, syntheticRemoteCwd(ctx.cwd));
+			registerRemoteTools(pi, requireSession, syntheticRemoteCwd(ctx.cwd), localSkills);
 			registered = true;
 		}
 		let displayHost = rawTarget;
@@ -434,8 +473,19 @@ export default function sshRemote(pi: ExtensionAPI): void {
 				+ `printf '%s\\0%s\\0%s\\0' "$PWD" "$HOME" "$remote_hostname"; `
 				+ `if command -v rg >/dev/null 2>&1; then printf '1\\0'; else printf '0\\0'; fi`;
 			const probe = await client.run(probeCommand, { timeoutSeconds: 15 });
-			const [remoteCwd, remoteHome, remoteHostname, ripgrepFlag] = probe.stdout.toString("utf8").split("\0");
+			const [probedCwd, remoteHome, remoteHostname, ripgrepFlag] = probe.stdout.toString("utf8").split("\0");
+			let remoteCwd = probedCwd;
 			if (!remoteCwd || !remoteHome) throw new Error("Remote shell did not report PWD and HOME.");
+			const environment: SessionEnvironment = {
+				version: 1, kind: "ssh", host: stableSessionHost(remoteHostname, parsed.host), cwd: remoteCwd,
+			};
+			const owner = readEnvironment(ctx.sessionManager.getEntries());
+			if (owner && sameEnvironment(owner, environment) && owner.cwd !== remoteCwd) {
+				const restored = await client.run(`cd ${quoteShell(owner.cwd)} && printf '%s' "$PWD"`, { timeoutSeconds: 15 });
+				remoteCwd = restored.stdout.toString("utf8");
+				if (!remoteCwd) throw new Error("Cannot restore the saved remote working directory.");
+				environment.cwd = remoteCwd;
+			}
 			session = {
 				client,
 				hasRipgrep: ripgrepFlag === "1",
@@ -444,8 +494,8 @@ export default function sshRemote(pi: ExtensionAPI): void {
 				remoteHome,
 				mapper: new RemotePathMapper(ctx.cwd, remoteCwd, remoteHome),
 			};
-			targetLabel = sessionTargetLabel(stableSessionHost(remoteHostname, parsed.host), remoteCwd);
-			syncSessionName(firstUserTopic(ctx.sessionManager.getEntries()));
+			environments.activate(ctx, environment);
+			if (environments.allowed(ctx)) syncSessionName(ctx, firstUserTopic(ctx.sessionManager.getEntries()));
 			ctx.ui.setStatus("ssh-remote", ctx.ui.theme.fg("accent", `SSH: ${parsed.host}:${remoteCwd}`));
 			ctx.ui.notify(`SSH remote mode: ${parsed.host}:${remoteCwd}`, "info");
 		} catch (error) {
@@ -477,25 +527,33 @@ export default function sshRemote(pi: ExtensionAPI): void {
 				},
 			};
 		}
-		return { operations: createBashOperations(requireSession) };
+		const operations = createBashOperations(requireSession);
+		return { operations: {
+			exec: (command, _localCwd, options) => operations.exec(command, requireSession().mapper.syntheticCwd, options),
+		} };
 	});
 
-	pi.on("before_agent_start", async (event) => {
-		if (!sessionNameTopic(pi.getSessionName())) syncSessionName(compactSessionTopic(event.prompt));
+	pi.on("before_agent_start", async (event, ctx) => {
+		if (!environments.allowed(ctx)) throw new Error(environments.blockedReason(ctx));
+		if (!sessionNameTopic(pi.getSessionName()) && typeof event.prompt === "string") {
+			syncSessionName(ctx, compactSessionTopic(event.prompt));
+		}
 		const options = event.systemPromptOptions;
 		if (!requested) {
 			delete options.sections.pi_kit_ssh;
 			return;
 		}
+		await localSkills.configure(options.skills ?? []);
 		if (!session) {
 			options.sections.pi_kit_ssh = "SSH remote mode is unavailable. Do not use file or shell tools.";
 			return;
 		}
 		options.cwd = session.remoteCwd;
-		options.sections.pi_kit_ssh = `SSH target: ${session.host}. The read, write, edit, bash, grep, find and ls tools operate on this remote server. The powershell tool is blocked; exa_search still runs locally.`;
+		options.sections.pi_kit_ssh = `SSH target: ${session.host}. The read, write, edit, bash, grep, find and ls tools operate on this remote server, except read of the exact local skill instruction entry files listed in available_skills: those are read locally and read-only. Use read, not remote bash, to load those skill files. This exception does not expose other local files or run local skill scripts. The powershell tool is blocked; exa_search still runs locally.`;
 	});
 
-	pi.on("session_info_changed", async (event) => {
+	pi.on("session_info_changed", async (event, ctx) => {
+		const targetLabel = environments.label(ctx);
 		if (!targetLabel) return;
 		const nextName = targetedSessionName(targetLabel, event.name);
 		if (nextName !== event.name) pi.setSessionName(nextName);

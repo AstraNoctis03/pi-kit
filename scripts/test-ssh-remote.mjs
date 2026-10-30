@@ -63,12 +63,14 @@ assert.equal(quoteShell("it's safe"), "'it'\"'\"'s safe'");
 assert.throws(() => quoteShell("bad\0value"));
 
 const localHandlers = new Map();
+const localEntries = [];
 let localSessionName;
 const localPi = {
 	registerFlag() {},
 	getFlag: () => undefined,
 	getSessionName: () => localSessionName,
 	setSessionName(name) { localSessionName = name; },
+	appendEntry(customType, data) { localEntries.push({ type: "custom", customType, data }); },
 	on(name, handler) {
 		const eventHandlers = localHandlers.get(name) ?? [];
 		eventHandlers.push(handler);
@@ -80,7 +82,7 @@ const localPi = {
 sshRemote(localPi);
 const localContext = {
 	cwd: process.cwd(),
-	sessionManager: { getEntries: () => [] },
+	sessionManager: { getEntries: () => localEntries },
 	ui: {
 		theme: { fg: (_color, text) => text },
 		setStatus() {},
@@ -103,7 +105,7 @@ assert.deepEqual(localPromptEvent.systemPromptOptions, {
 assert.equal(localSessionName, "[LOCAL] Fix the failing tests");
 await localHandlers.get("session_info_changed")[0]({ name: "Release prep" }, localContext);
 assert.equal(localSessionName, "[LOCAL] Release prep");
-assert.equal(await localHandlers.get("tool_call")[0]({ toolName: "powershell" }, localContext), undefined,
+assert.equal(await localHandlers.get("tool_call").at(-1)({ toolName: "powershell" }, localContext), undefined,
 	"SSH extension alone must not restrict local sessions");
 
 const handlers = new Map();
@@ -124,6 +126,7 @@ const mockPi = {
 };
 const mockContext = {
 	cwd: process.cwd(),
+	sessionManager: { getEntries: () => [] },
 	ui: {
 		theme: { fg: (_color, text) => text },
 		setStatus() {},
@@ -131,7 +134,7 @@ const mockContext = {
 	},
 };
 sshRemote(mockPi);
-const sshToolGuard = handlers.get("tool_call")[0];
+const sshToolGuard = handlers.get("tool_call").at(-1);
 assert.equal((await sshToolGuard({ toolName: "powershell" }, mockContext)).block, true,
 	"Block local PowerShell even before SSH initialization");
 await assert.rejects(
@@ -152,13 +155,9 @@ const failedPromptEvent = {
 		sections: { pi_kit_preset: "Review instructions", other: "Keep this section" },
 	},
 };
-assert.equal(await handlers.get("before_agent_start")[0](failedPromptEvent, mockContext), undefined);
-assert.deepEqual(failedPromptEvent.systemPromptOptions, {
-	cwd: process.cwd(), sections: {
-		pi_kit_preset: "Review instructions", other: "Keep this section",
-		pi_kit_ssh: "SSH remote mode is unavailable. Do not use file or shell tools.",
-	},
-});
+await assert.rejects(() => handlers.get("before_agent_start")[0](failedPromptEvent, mockContext), /Session environment/);
+assert.equal((await handlers.get("tool_call")[0]({ toolName: "bash" }, mockContext)).block, true,
+	"Failed environment initialization blocks execution independently of prompt rendering");
 
 for (const parentToolCallId of [undefined, "codemode-parent"]) {
 	const decision = await sshToolGuard({ toolName: "powershell", parentToolCallId }, mockContext);

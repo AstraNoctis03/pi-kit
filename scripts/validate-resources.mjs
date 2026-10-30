@@ -24,12 +24,22 @@ const requiredFiles = [
 	"extensions/sensitive-paths/config.ts",
 	"extensions/sensitive-paths/index.ts",
 	"extensions/ssh-remote/config.ts",
+	"extensions/ssh-remote/environment-sessions.ts",
+	"extensions/ssh-remote/environment.ts",
+	"extensions/ssh-remote/resume-picker.ts",
+	"extensions/ssh-remote/resume-state.ts",
 	"extensions/ssh-remote/index.ts",
+	"extensions/ssh-remote/local-skills.ts",
 	"extensions/ssh-remote/paths.ts",
 	"extensions/ssh-remote/session-label.ts",
+	"extensions/ssh-remote/session-index.ts",
 	"extensions/ssh-remote/transport.ts",
 	"extensions/titlebar-spinner/index.ts",
 	"scripts/test-theme.mjs",
+	"scripts/test-resume-state.mjs",
+	"scripts/test-ssh-skills.mjs",
+	"scripts/test-ssh-cwd.mjs",
+	"scripts/test-pi-integration.mjs",
 	"themes/pi-kit-tokyo-night.json",
 	"skills/code-review/SKILL.md",
 	"skills/debugging/SKILL.md",
@@ -52,7 +62,7 @@ const expectedHandoffExtensionFiles = ["index.ts"];
 const expectedPresetExtensionFiles = ["config.ts", "index.ts", "review-policy.ts"];
 const expectedSafetyExtensionFiles = ["dialog-colors.ts", "dialog.ts", "index.ts", "policy.ts"];
 const expectedSensitiveExtensionFiles = ["config.ts", "index.ts"];
-const expectedSshExtensionFiles = ["config.ts", "index.ts", "paths.ts", "session-label.ts", "transport.ts"];
+const expectedSshExtensionFiles = ["config.ts", "environment-sessions.ts", "environment.ts", "index.ts", "local-skills.ts", "paths.ts", "resume-picker.ts", "resume-state.ts", "session-index.ts", "session-label.ts", "transport.ts"];
 const expectedTitleExtensionFiles = ["index.ts"];
 
 function fail(message) {
