@@ -12,13 +12,6 @@ function joinRemote(root: string, relative: string): string {
 	return path.posix.resolve(root, relative.split(path.sep).join("/"));
 }
 
-function isInsideRemote(root: string, value: string): string | undefined {
-	const relative = path.posix.relative(root, value);
-	if (relative === "") return "";
-	if (relative === ".." || relative.startsWith("../") || path.posix.isAbsolute(relative)) return undefined;
-	return relative;
-}
-
 export function syntheticRemoteCwd(localCwd: string): string {
 	return path.resolve(localCwd, ".pi-ssh-remote-workspace");
 }
@@ -28,11 +21,13 @@ export class RemotePathMapper {
 	readonly remoteHome: string;
 	readonly syntheticCwd: string;
 	private readonly localHome = homedir();
+	private readonly encodedRoot: string;
 
 	constructor(localCwd: string, remoteCwd: string, remoteHome: string) {
 		this.remoteCwd = remoteCwd;
 		this.remoteHome = remoteHome;
 		this.syntheticCwd = syntheticRemoteCwd(localCwd);
+		this.encodedRoot = path.resolve(localCwd, ".pi-ssh-remote-paths");
 	}
 
 	resolveRemoteInput(input: string): string {
@@ -50,6 +45,9 @@ export class RemotePathMapper {
 		const value = input.trim().replace(/^@/, "");
 		if (process.platform === "win32" && path.win32.isAbsolute(value) && !path.posix.isAbsolute(value)) {
 			if (value.startsWith("\\\\")) throw new Error(`UNC paths are not supported in SSH mode: ${input}`);
+			if (isInside(this.encodedRoot, path.resolve(value)) !== undefined) {
+				throw new Error("Encoded SSH paths are internal; use the original remote POSIX path instead.");
+			}
 			return path.win32.normalize(value); // Preserve already-encoded native absolute paths.
 		}
 		return this.toToolPath(this.resolveRemoteInput(value));
@@ -57,6 +55,10 @@ export class RemotePathMapper {
 
 	toRemotePath(toolPath: string): string {
 		const absolute = path.resolve(toolPath);
+		const encodedRelative = isInside(this.encodedRoot, absolute);
+		if (encodedRelative !== undefined) {
+			return path.posix.resolve("/", ...encodedRelative.split(path.sep).filter(Boolean).map(decodeURIComponent));
+		}
 		const workspaceRelative = isInside(this.syntheticCwd, absolute);
 		if (workspaceRelative !== undefined) return joinRemote(this.remoteCwd, workspaceRelative);
 
@@ -73,17 +75,9 @@ export class RemotePathMapper {
 	}
 
 	toToolPath(remotePath: string): string {
+		// Keep every remote path separate from local home/workspace aliases and
+		// Windows /a drive syntax. Encoding also preserves POSIX ':' and '%' names.
 		const normalized = path.posix.normalize(remotePath);
-		const workspaceRelative = isInsideRemote(this.remoteCwd, normalized);
-		if (workspaceRelative !== undefined) return path.resolve(this.syntheticCwd, ...workspaceRelative.split("/").filter(Boolean));
-
-		const homeRelative = isInsideRemote(this.remoteHome, normalized);
-		if (homeRelative !== undefined) return path.resolve(this.localHome, ...homeRelative.split("/").filter(Boolean));
-
-		if (process.platform === "win32") {
-			const driveRoot = path.win32.parse(this.syntheticCwd).root;
-			return path.win32.resolve(driveRoot, ...normalized.split("/").filter(Boolean));
-		}
-		return normalized;
+		return path.resolve(this.encodedRoot, ...normalized.split("/").filter(Boolean).map(encodeURIComponent));
 	}
 }

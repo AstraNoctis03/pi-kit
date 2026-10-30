@@ -56,7 +56,12 @@ assert.equal(mapper.resolveRemoteInput("src/index.ts"), "/srv/project/src/index.
 assert.equal(mapper.resolveRemoteInput("~/notes.txt"), "/home/tester/notes.txt");
 assert.equal(mapper.toRemotePath(path.join(mapper.syntheticCwd, "src", "index.ts")), "/srv/project/src/index.ts");
 assert.equal(mapper.toRemotePath(path.join(homedir(), "notes.txt")), "/home/tester/notes.txt");
-assert.equal(mapper.toToolPath("/srv/project/src/index.ts"), path.join(mapper.syntheticCwd, "src", "index.ts"));
+for (const remotePath of ["/srv/project/src/index.ts", "/home/tester/notes.txt", "/a/pi-kit/skills/SKILL.md", "/c/repo/file.txt", "/tmp/a:b", "/tmp/a%2Fb", "/tmp/空 格.txt"]) {
+	assert.equal(mapper.toRemotePath(mapper.toToolPath(remotePath)), remotePath);
+}
+if (process.platform === "win32") {
+	assert.throws(() => mapper.toToolInput(mapper.toToolPath("/tmp/.env")), /internal/);
+}
 
 assert.equal(quoteShell("plain"), "'plain'");
 assert.equal(quoteShell("it's safe"), "'it'\"'\"'s safe'");

@@ -35,6 +35,8 @@ const requiredFiles = [
 	"extensions/ssh-remote/session-index.ts",
 	"extensions/ssh-remote/transport.ts",
 	"extensions/titlebar-spinner/index.ts",
+	"extensions/verification/index.ts",
+	"scripts/test-verification.mjs",
 	"scripts/test-theme.mjs",
 	"scripts/test-resume-state.mjs",
 	"scripts/test-ssh-skills.mjs",
@@ -64,6 +66,7 @@ const expectedSafetyExtensionFiles = ["dialog-colors.ts", "dialog.ts", "index.ts
 const expectedSensitiveExtensionFiles = ["config.ts", "index.ts"];
 const expectedSshExtensionFiles = ["config.ts", "environment-sessions.ts", "environment.ts", "index.ts", "local-skills.ts", "paths.ts", "resume-picker.ts", "resume-state.ts", "session-index.ts", "session-label.ts", "transport.ts"];
 const expectedTitleExtensionFiles = ["index.ts"];
+const expectedVerificationFiles = ["index.ts"];
 
 function fail(message) {
 	throw new Error(message);
@@ -99,6 +102,7 @@ if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
 	"./extensions/presets/index.ts",
 	"./extensions/safety-guard/index.ts",
 	"./extensions/sensitive-paths/index.ts",
+	"./extensions/verification/index.ts",
 	"./extensions/ssh-remote/index.ts",
 	"./extensions/dirty-repo-guard/index.ts",
 	"./extensions/custom-footer/index.ts",
@@ -164,6 +168,11 @@ if (JSON.stringify(sshExtensionFiles) !== JSON.stringify(expectedSshExtensionFil
 const titleExtensionFiles = readdirSync(join("extensions", "titlebar-spinner")).sort();
 if (JSON.stringify(titleExtensionFiles) !== JSON.stringify(expectedTitleExtensionFiles)) {
 	fail(`非预期的 title extension 文件: ${titleExtensionFiles.join(", ")}`);
+}
+
+const verificationFiles = readdirSync(join("extensions", "verification")).sort();
+if (JSON.stringify(verificationFiles) !== JSON.stringify(expectedVerificationFiles)) {
+	fail(`非预期的 verification extension 文件: ${verificationFiles.join(", ")}`);
 }
 
 console.log("validate:resources ok");

@@ -55,6 +55,9 @@ try {
 			["../outside.txt", "/srv/outside.txt"],
 			["/var/fixtures/absolute.txt", "/var/fixtures/absolute.txt"],
 			["~/home.txt", `${remoteHome}/home.txt`],
+			["/a/pi-kit/skills/SKILL.md", "/a/pi-kit/skills/SKILL.md"],
+			["/tmp/a:b%2Fc.txt", "/tmp/a:b%2Fc.txt"],
+			["/tmp/空　格.txt", "/tmp/空　格.txt"],
 		];
 		for (const [input, expected] of cases) {
 			files.set(expected, "old content\n");
@@ -77,6 +80,15 @@ try {
 		const beforeSkill = commands.length;
 		assert.equal((await tools.get("read").execute("skill", { path: skillPath }, undefined, undefined, ctx)).content[0].text, readFileSync(skillPath, "utf8"));
 		assert.equal(commands.length, beforeSkill);
+		if (process.platform === "win32") {
+			// Rooted POSIX paths can resolve to the same local filename on the
+			// launch drive, but must stay remote (including CI's /a/... paths).
+			const root = path.win32.parse(skillPath).root;
+			const remoteLookalike = `/${skillPath.slice(root.length).replace(/\\/g, "/")}`;
+			files.set(remoteLookalike, "REMOTE DRIVE-ROOT CONTENT");
+			assert.equal((await tools.get("read").execute("remote-lookalike", { path: remoteLookalike }, undefined, undefined, ctx)).content[0].text,
+				"REMOTE DRIVE-ROOT CONTENT", "A POSIX remote path must never select a local skill through Windows drive resolution");
+		}
 		const mapper = new RemotePathMapper(localCwd, remoteCwd, remoteHome);
 		const remoteSkillPath = mapper.toRemotePath(skillPath);
 		files.set(remoteSkillPath, "REMOTE SKILL CONTENT");

@@ -13,7 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "validate:resources": "node scripts/validate-resources.mjs",
-    "test": "npm run test:safety && npm run test:ssh && npm run test:environment && npm run test:exa && npm run test:footer && npm run test:workflow && npm run test:session-extensions && npm run test:theme && npm run test:integration",
+    "test": "npm run test:safety && npm run test:ssh && npm run test:environment && npm run test:exa && npm run test:footer && npm run test:workflow && npm run test:session-extensions && npm run test:theme && npm run test:verification && npm run test:integration",
     "test:safety": "node scripts/test-safety-guard.js",
     "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-skills.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-cwd.mjs",
     "test:environment": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-environment-sessions.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-resume-state.mjs",
@@ -21,6 +21,7 @@
     "test:footer": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-custom-footer.mjs",
     "test:workflow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-workflow-extensions.mjs",
     "test:session-extensions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-session-extensions.mjs",
+    "test:verification": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-verification.mjs",
     "test:integration": "node scripts/test-pi-integration.mjs",
     "test:theme": "node scripts/test-theme.mjs",
     "validate": "npm run typecheck && npm run validate:resources"
@@ -43,6 +44,7 @@
       "./extensions/presets/index.ts",
       "./extensions/safety-guard/index.ts",
       "./extensions/sensitive-paths/index.ts",
+      "./extensions/verification/index.ts",
       "./extensions/ssh-remote/index.ts",
       "./extensions/dirty-repo-guard/index.ts",
       "./extensions/custom-footer/index.ts",

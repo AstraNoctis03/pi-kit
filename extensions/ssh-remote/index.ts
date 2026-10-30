@@ -381,7 +381,11 @@ function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, 
 			const context = ctx && { ...ctx, cwd: toolCwd };
 			// Decide the local exception using the original input, never an encoded
 			// remote-home path which might happen to resemble a local skill filename.
-			if (path.isAbsolute(localInput) && localSkills.has(localInput)) {
+			// On Windows, /a/... is a POSIX remote path even when path.resolve()
+			// aliases it to a registered file on the local launch drive.
+			const nativeAbsolute = path.isAbsolute(localInput)
+				&& (process.platform !== "win32" || !path.posix.isAbsolute(localInput));
+			if (nativeAbsolute && localSkills.has(localInput)) {
 				return skillRead.execute(id, { ...params, path: localInput }, signal, onUpdate, context);
 			}
 			return read.execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate, context);

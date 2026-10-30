@@ -108,7 +108,7 @@ try {
 	}
 	const prompt = await emitStart();
 	assert.equal(prompt.skills.length, 2);
-	const runner = session.extensionRunner;
+	let runner = session.extensionRunner;
 	async function execute(name, input) {
 		assert.equal(await runner.emitToolCall({ type: "tool_call", toolName: name, toolCallId: `integration-${name}`, input }), undefined);
 		return runner.getToolDefinition(name).execute(`integration-${name}`, input, undefined, undefined, runner.createContext());
@@ -116,6 +116,7 @@ try {
 	for (const [input, expected] of [
 		["notes.txt", `${remoteCwd}/notes.txt`], ["../outside.txt", "/srv/outside.txt"],
 		["~/home.txt", `${remoteHome}/home.txt`], ["/var/fixtures/file.txt", "/var/fixtures/file.txt"],
+		["/a/fixtures/file.txt", "/a/fixtures/file.txt"], ["/tmp/a:b%2Fc.txt", "/tmp/a:b%2Fc.txt"],
 	]) {
 		files.set(expected, "old content\n");
 		assert.equal((await execute("read", { path: input })).content[0].text, "old content\n");
@@ -132,6 +133,45 @@ try {
 	const beforeSkills = commands.length;
 	for (const skill of prompt.skills) assert.equal((await execute("read", { path: skill.filePath })).content[0].text, readFileSync(skill.filePath, "utf8"));
 	assert.equal(commands.length, beforeSkills, "Skill loading stays local even through host tool registration");
+	if (process.platform === "win32") {
+		const skill = prompt.skills[0].filePath;
+		const remoteLookalike = `/${skill.slice(path.win32.parse(skill).root.length).replace(/\\/g, "/")}`;
+		files.set(remoteLookalike, "REMOTE ROOTED PATH");
+		assert.equal((await execute("read", { path: remoteLookalike })).content[0].text, "REMOTE ROOTED PATH");
+	}
+
+	// Seed an assistant caller, without calling a model, so nested tools use the
+	// actual host execution/guard/result pipeline rather than manually emitted hooks.
+	const seedCaller = () => session.agent.state.messages.push({ role: "assistant", content: [
+		{ type: "toolCall", id: "verification-fixture", name: "bash", arguments: { command: "pwd" } },
+	], api: "openai-responses", provider: "fixture", model: "fixture", stopReason: "toolUse", timestamp: Date.now(),
+	usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
+	const evidence = () => parent.getBranch().filter((entry) => entry.type === "custom" && entry.customType === "pi-kit.verification").at(-1).data;
+	const nested = (name, args) => runner.createToolContext("verification-fixture").executeTool(name, args);
+	const beforePlan = commands.length;
+	await session.prompt("/verify add pwd");
+	assert.equal(commands.length, beforePlan); assert.equal(evidence().runs.length, 0);
+	seedCaller();
+	assert.equal((await nested("bash", { command: "pwd" })).isError, false);
+	assert.equal(evidence().runs[0].exitCode, 0); assert.equal(evidence().runs[0].revision, evidence().revision);
+	assert.equal(evidence().runs[0].target, `SSH fixture-host:${remoteCwd}`);
+	const checkedUserBash = await runner.emitUserBash({ type: "user_bash", command: "pwd", excludeFromContext: false, cwd: root });
+	assert.ok(evidence().runs[0].revision < evidence().revision, "Verification must observe ! before SSH stops handler dispatch");
+	await checkedUserBash.operations.exec("pwd", root, { onData() {} });
+	assert.equal((await nested("bash", { command: "pwd" })).isError, false);
+	assert.equal((await nested("write", { path: "evidence.txt", content: "changed" })).isError, false);
+	assert.ok(evidence().runs[0].revision < evidence().revision);
+	assert.equal((await nested("bash", { command: "pwd" })).isError, false);
+	assert.equal(evidence().runs[0].revision, evidence().revision);
+	await session.reload(); runner = session.extensionRunner;
+	assert.ok(evidence().runs[0].revision < evidence().revision, "Reload retains evidence, but cannot restore the verified files");
+	await session.prompt("/verify add npm install"); seedCaller();
+	const beforeBlocked = commands.length;
+	assert.equal((await nested("bash", { command: "npm install" })).isError, true);
+	assert.equal(commands.length, beforeBlocked, "Checklist registration never grants permission to execute");
+	assert.equal(evidence().runs.find((run) => run.command === "npm install").isError, true);
+	await session.prompt("/verify reset");
 
 	const rootBlock = await runner.emitToolCall({ type: "tool_call", toolName: "bash", toolCallId: "blocked-root", input: { command: "npm install && rm -rf /" } });
 	assert.equal(rootBlock.block, true); assert.match(rootBlock.reason, /rm-root/);
@@ -188,7 +228,7 @@ try {
 	assert.deepEqual(errors, []);
 	assert.equal(readFileSync(parent.getSessionFile(), "utf8"), beforeParent);
 	assert.equal(readFileSync(child.getSessionFile(), "utf8"), beforeChild);
-	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/archive/reload verified (SSH simulated)`);
+	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/verification/archive/reload verified (SSH simulated)`);
 } finally {
 	session?.dispose();
 	cp.spawn = originalSpawn; syncBuiltinESMExports();
