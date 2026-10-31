@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -26,7 +27,14 @@ try {
 			} else if (command.startsWith("file --mime-type")) text = "text/plain";
 			else if (command.startsWith("cat -- ")) text = files.get(quoted[0]) ?? "";
 			else if (command.startsWith("mkdir -p -- ")) { /* Remote directory creation is simulated. */ }
-			else if (command.startsWith("cat > ")) files.set(quoted[0], String(options.input));
+			else if (command.startsWith("bash -c ") && command.includes("SSH atomic write:")) {
+				const args = command.match(/ -- ('(?:[^']|'"'"')*') '(\d+)' '([a-f0-9]{64})'$/);
+				assert.ok(args, "Atomic write carries a safely quoted path, byte count and digest");
+				const payload = Buffer.from(options.input);
+				assert.equal(payload.length, Number(args[2]));
+				assert.equal(createHash("sha256").update(payload).digest("hex"), args[3]);
+				files.set(args[1].slice(1, -1).replaceAll("'\"'\"'", "'"), payload.toString("utf8"));
+			}
 			else if (command.startsWith("cd ") && command.endsWith(" && pwd")) text = quoted[0];
 			else throw new Error(`Unexpected mock SSH command: ${command}`);
 			const stdout = Buffer.from(text);

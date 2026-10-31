@@ -15,7 +15,7 @@
     "validate:resources": "node scripts/validate-resources.mjs",
     "test": "npm run test:safety && npm run test:ssh && npm run test:environment && npm run test:exa && npm run test:footer && npm run test:workflow && npm run test:session-extensions && npm run test:theme && npm run test:verification && npm run test:integration",
     "test:safety": "node scripts/test-safety-guard.js",
-    "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-skills.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-cwd.mjs",
+    "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-skills.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-cwd.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-write.mjs",
     "test:environment": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-environment-sessions.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-resume-state.mjs",
     "test:exa": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-exa-search.mjs",
     "test:footer": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-custom-footer.mjs",

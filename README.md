@@ -169,9 +169,19 @@ Pi 不允许扩展直接覆盖内置 `/resume`，所以原生 `/resume` 和启�
 
 - 已配置基于密钥或 Agent 的非交互 SSH 登录
 - 远程系统提供 Bash、GNU `find`、`head` 和 GNU `grep`
+- 文件写入另需 GNU coreutils：`realpath`、`stat`、`mktemp`、`cat`、`wc`、`sha256sum`、`cp`（支持 ACL/xattr）、`mv`、`rm`、`rmdir`；缺少能力时拒绝写入，不退回原地覆盖
 - `grep` 优先使用远程 ripgrep（`rg`），未安装时自动回退到 GNU `grep`
 
 GNU `grep` 回退与远程 `find` 会排除 `.git`、`node_modules`，但不会解析其他 `.gitignore` 规则。
+
+### 写入中断保护
+
+SSH `write` / `edit` 先将内容写入目标目录下的私有 `.pi-write-*` 临时目录，校验 UTF-8 字节长度和 SHA-256 后才原子替换；半截输入、校验失败或提交前错误不会截断原文件。不重试写入，也不自动降级。普通新文件遵循远端 umask；已有文件通过 GNU `cp` 的[属性复制选项](https://www.manpagez.com/info/coreutils/coreutils-9.3/cp_invocation.php)保留权限、所有者/组、ACL 和扩展属性，但不沿用旧修改时间。
+
+- 符号链接会写入其实际目标，不替换链接本身；目标目录必须存在且可写。已有文件还需可读，以便 GNU `cp` 复制属性；不会为此临时放宽源文件权限。
+- 原子替换无法保持硬链接的同 inode 语义，遇到硬链接、非普通文件、只读文件或无法保留属性时明确报错，不偷偷改变语义。
+- 上传期间检查目标路径与文件元数据是否变化，但这不是多进程锁或完整的并发事务；不能防止所有外部编辑竞态。
+- 如果远端已提交而连接在回执前断开，工具仍可能报错，此时文件可能已经是完整新版本；先重新读取确认，勿盲目重试。原子替换不保证断电持久性；强杀或主机故障可能遗留私有临时目录。
 
 SSH 扩展不会建立安全沙箱。首次使用应选择测试目录，并确保远程数据有备份和最小权限保护；条件允许时也可使用 Git。
 
@@ -382,7 +392,11 @@ git diff --check
 
 GitHub Actions 使用 Node.js 24，在 Ubuntu 和 Windows 上于 main Push 与 Pull Request 中自动运行同一套检查。开发依赖保留 Pi 0.99.2 基线，另外在临时目录安装隔离的 Pi 1.4.0 主机运行 SDK 集成测试，不修改项目依赖或 lockfile。
 
-`npm test` 包含真实 SDK 加载全部扩展、工具调用与守卫、SSH 路径、skill 读取、验收记录、归档与重载测试。SSH 进程由内存模拟传输替代，不连接服务器、不调用模型、不执行测试中的危险命令字符串。单独运行：
+`npm test` 包含真实 SDK 加载全部扩展、工具调用与守卫、SSH 路径、skill 读取、验收记录、归档与重载测试。SDK 测试的 SSH 进程由内存模拟传输替代，不连接服务器、不调用模型、不执行测试中的危险命令字符串。
+
+`npm run test:ssh` 另含本地 Bash/GNU coreutils 的真实临时文件测试：截断/等长损坏输入、权限与符号链接、硬链接拒绝、属性复制/提交失败、取消和普通编辑。Linux 使用 `/tmp`；Windows 使用已安装的 WSL 且只写其 `/tmp`，不安装发行版；无 WSL 时仅跳过这组 Unix 文件系统用例，Windows 模拟传输/SDK 测试照常运行。真实网络中断仍需另行验证。
+
+单独运行 SDK 集成测试：
 
 ```bash
 npm run test:integration

@@ -35,6 +35,7 @@ import {
 } from "./session-label.ts";
 import { quoteShell, SshClient } from "./transport.ts";
 import { LocalSkillInstructions } from "./local-skills.ts";
+import { writeRemoteFile } from "./atomic-write.ts";
 
 const DEFAULT_FIND_LIMIT = 1000;
 const DEFAULT_GREP_LIMIT = 100;
@@ -80,29 +81,29 @@ function createReadOperations(getSession: () => RemoteSession, localSkills?: Loc
 	};
 }
 
-function createWriteOperations(getSession: () => RemoteSession): WriteOperations {
+function createWriteOperations(getSession: () => RemoteSession, signal?: AbortSignal): WriteOperations {
 	return {
 		mkdir: async (dirPath) => {
 			const { client, mapper } = getSession();
-			await client.run(`mkdir -p -- ${quoteShell(mapper.toRemotePath(dirPath))}`);
+			await client.run(`mkdir -p -- ${quoteShell(mapper.toRemotePath(dirPath))}`, { signal });
 		},
 		writeFile: async (filePath, content) => {
 			const { client, mapper } = getSession();
-			await client.run(`cat > ${quoteShell(mapper.toRemotePath(filePath))}`, { input: content });
+			await writeRemoteFile(client, mapper.toRemotePath(filePath), content, signal);
 		},
 	};
 }
 
-function createEditOperations(getSession: () => RemoteSession): EditOperations {
+function createEditOperations(getSession: () => RemoteSession, signal?: AbortSignal): EditOperations {
 	const read = createReadOperations(getSession);
-	const write = createWriteOperations(getSession);
+	const write = createWriteOperations(getSession, signal);
 	return {
 		readFile: read.readFile,
 		writeFile: write.writeFile,
 		access: async (filePath) => {
 			const session = getSession();
 			const remotePath = session.mapper.toRemotePath(filePath);
-			await session.client.run(`test -r ${quoteShell(remotePath)} && test -w ${quoteShell(remotePath)}`);
+			await session.client.run(`test -r ${quoteShell(remotePath)} && test -w ${quoteShell(remotePath)}`, { signal });
 		},
 	};
 }
@@ -367,8 +368,8 @@ async function executeRemoteGrep(
 function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, toolCwd: string, localSkills: LocalSkillInstructions): void {
 	const read = createReadToolDefinition(toolCwd, { operations: createReadOperations(getSession) });
 	const skillRead = createReadToolDefinition(toolCwd, { operations: createReadOperations(getSession, localSkills) });
-	const write = createWriteToolDefinition(toolCwd, { operations: createWriteOperations(getSession) });
-	const edit = createEditToolDefinition(toolCwd, { operations: createEditOperations(getSession) });
+	const writeTool = (signal?: AbortSignal) => createWriteToolDefinition(toolCwd, { operations: createWriteOperations(getSession, signal) });
+	const editTool = (signal?: AbortSignal) => createEditToolDefinition(toolCwd, { operations: createEditOperations(getSession, signal) });
 	const bash = createBashToolDefinition(toolCwd, { operations: createBashOperations(getSession) });
 	const ls = createLsTool(toolCwd);
 	const find = createFindTool(toolCwd);
@@ -392,16 +393,16 @@ function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, 
 		},
 	});
 	pi.registerTool({
-		...write,
+		...writeTool(),
 		async execute(id, params, signal, onUpdate, ctx) {
-			return write.execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate,
+			return writeTool(signal).execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate,
 				ctx && { ...ctx, cwd: toolCwd });
 		},
 	});
 	pi.registerTool({
-		...edit,
+		...editTool(),
 		async execute(id, params, signal, onUpdate, ctx) {
-			return edit.execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate,
+			return editTool(signal).execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate,
 				ctx && { ...ctx, cwd: toolCwd });
 		},
 	});

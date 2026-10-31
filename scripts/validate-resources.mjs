@@ -23,6 +23,7 @@ const requiredFiles = [
 	"extensions/safety-guard/policy.ts",
 	"extensions/sensitive-paths/config.ts",
 	"extensions/sensitive-paths/index.ts",
+	"extensions/ssh-remote/atomic-write.ts",
 	"extensions/ssh-remote/config.ts",
 	"extensions/ssh-remote/environment-sessions.ts",
 	"extensions/ssh-remote/environment.ts",
@@ -41,6 +42,7 @@ const requiredFiles = [
 	"scripts/test-resume-state.mjs",
 	"scripts/test-ssh-skills.mjs",
 	"scripts/test-ssh-cwd.mjs",
+	"scripts/test-ssh-write.mjs",
 	"scripts/test-pi-integration.mjs",
 	"themes/pi-kit-tokyo-night.json",
 	"skills/code-review/SKILL.md",
@@ -64,7 +66,7 @@ const expectedHandoffExtensionFiles = ["index.ts"];
 const expectedPresetExtensionFiles = ["config.ts", "index.ts", "review-policy.ts"];
 const expectedSafetyExtensionFiles = ["dialog-colors.ts", "dialog.ts", "index.ts", "policy.ts"];
 const expectedSensitiveExtensionFiles = ["config.ts", "index.ts"];
-const expectedSshExtensionFiles = ["config.ts", "environment-sessions.ts", "environment.ts", "index.ts", "local-skills.ts", "paths.ts", "resume-picker.ts", "resume-state.ts", "session-index.ts", "session-label.ts", "transport.ts"];
+const expectedSshExtensionFiles = ["atomic-write.ts", "config.ts", "environment-sessions.ts", "environment.ts", "index.ts", "local-skills.ts", "paths.ts", "resume-picker.ts", "resume-state.ts", "session-index.ts", "session-label.ts", "transport.ts"];
 const expectedTitleExtensionFiles = ["index.ts"];
 const expectedVerificationFiles = ["index.ts"];
 

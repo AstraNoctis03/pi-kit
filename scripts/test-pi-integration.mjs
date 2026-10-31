@@ -3,6 +3,7 @@
 // PI_KIT_TEST_AGENT_ENTRY can point at another already-installed Pi SDK entry.
 import assert from "node:assert/strict";
 import cp from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import { PassThrough, Writable } from "node:stream";
@@ -25,6 +26,7 @@ const commands = [];
 const remoteCwd = "/srv/project with spaces";
 const remoteHome = "/home/fixture";
 let session;
+let writeFault;
 
 cp.spawn = function(binary, args, options) {
 	if (binary !== "ssh") return originalSpawn(binary, args, options);
@@ -49,7 +51,16 @@ cp.spawn = function(binary, args, options) {
 			} else if (command.startsWith("file --mime-type")) text = "text/plain";
 			else if (command.startsWith("cat -- ")) text = files.get(quoted[0]) ?? "";
 			else if (command.startsWith("mkdir -p -- ")) { /* In-memory remote directory. */ }
-			else if (command.startsWith("cat > ")) files.set(quoted[0], Buffer.concat(input).toString("utf8"));
+			else if (command.startsWith("bash -c ") && command.includes("SSH atomic write:")) {
+				const args = command.match(/ -- ('(?:[^']|'"'"')*') '(\d+)' '([a-f0-9]{64})'$/);
+				assert.ok(args, "Atomic writes must carry path, length and SHA-256");
+				let payload = Buffer.concat(input);
+				if (writeFault === "short") payload = payload.subarray(0, 3);
+				if (writeFault === "corrupt") payload[0] ^= 1;
+				assert.equal(payload.length, Number(args[2]), "Incomplete upload");
+				assert.equal(createHash("sha256").update(payload).digest("hex"), args[3], "Input checksum mismatch");
+				files.set(args[1].slice(1, -1).replaceAll("'\"'\"'", "'"), payload.toString("utf8"));
+			}
 			else if (command.startsWith("cd ") && command.endsWith(" && pwd")) text = quoted[0];
 			else throw new Error(`Unexpected simulated SSH command: ${command}`);
 		} catch (caught) { error = caught; }
@@ -161,6 +172,14 @@ try {
 	await checkedUserBash.operations.exec("pwd", root, { onData() {} });
 	assert.equal((await nested("bash", { command: "pwd" })).isError, false);
 	assert.equal((await nested("write", { path: "evidence.txt", content: "changed" })).isError, false);
+	for (const fault of ["short", "corrupt"]) {
+		writeFault = fault;
+		assert.equal((await nested("write", { path: "evidence.txt", content: "not fully delivered" })).isError, true);
+		assert.equal(files.get(`${remoteCwd}/evidence.txt`), "changed");
+		assert.equal((await nested("edit", { path: "evidence.txt", edits: [{ oldText: "changed", newText: "not fully delivered" }] })).isError, true);
+		assert.equal(files.get(`${remoteCwd}/evidence.txt`), "changed");
+	}
+	writeFault = undefined;
 	assert.ok(evidence().runs[0].revision < evidence().revision);
 	assert.equal((await nested("bash", { command: "pwd" })).isError, false);
 	assert.equal(evidence().runs[0].revision, evidence().revision);
@@ -228,7 +247,7 @@ try {
 	assert.deepEqual(errors, []);
 	assert.equal(readFileSync(parent.getSessionFile(), "utf8"), beforeParent);
 	assert.equal(readFileSync(child.getSessionFile(), "utf8"), beforeChild);
-	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/verification/archive/reload verified (SSH simulated)`);
+	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/atomic-write/verification/archive/reload verified (SSH simulated)`);
 } finally {
 	session?.dispose();
 	cp.spawn = originalSpawn; syncBuiltinESMExports();
