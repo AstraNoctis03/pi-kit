@@ -13,7 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "validate:resources": "node scripts/validate-resources.mjs",
-    "test": "npm run test:safety && npm run test:ssh && npm run test:environment && npm run test:exa && npm run test:footer && npm run test:workflow && npm run test:session-extensions && npm run test:theme && npm run test:verification && npm run test:integration",
+    "test": "npm run test:safety && npm run test:ssh && npm run test:environment && npm run test:exa && npm run test:footer && npm run test:workflow && npm run test:session-extensions && npm run test:theme && npm run test:tool-ui && npm run test:verification && npm run test:integration",
     "test:safety": "node scripts/test-safety-guard.js",
     "test:ssh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-remote.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-skills.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-cwd.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-ssh-write.mjs",
     "test:environment": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-environment-sessions.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-resume-state.mjs",
@@ -24,6 +24,7 @@
     "test:verification": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-verification.mjs",
     "test:integration": "node scripts/test-pi-integration.mjs",
     "test:theme": "node scripts/test-theme.mjs",
+    "test:tool-ui": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-compact-tools.mjs",
     "validate": "npm run typecheck && npm run validate:resources"
   },
   "peerDependencies": {
@@ -48,6 +49,7 @@
       "./extensions/ssh-remote/index.ts",
       "./extensions/dirty-repo-guard/index.ts",
       "./extensions/custom-footer/index.ts",
+      "./extensions/compact-tools/index.ts",
       "./extensions/handoff/index.ts",
       "./extensions/titlebar-spinner/index.ts"
     ]

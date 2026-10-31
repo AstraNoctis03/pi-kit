@@ -9,6 +9,11 @@ const requiredFiles = [
 	"README.md",
 	"package.json",
 	"tsconfig.json",
+	"extensions/compact-tools/ansi.ts",
+	"extensions/compact-tools/file-renderers.ts",
+	"extensions/compact-tools/index.ts",
+	"extensions/compact-tools/layout.ts",
+	"extensions/compact-tools/renderers.ts",
 	"extensions/custom-footer/colors.ts",
 	"extensions/custom-footer/index.ts",
 	"extensions/dirty-repo-guard/index.ts",
@@ -39,6 +44,8 @@ const requiredFiles = [
 	"extensions/verification/index.ts",
 	"scripts/test-verification.mjs",
 	"scripts/test-theme.mjs",
+	"scripts/test-compact-tools.mjs",
+	"scripts/test-file-tools.mjs",
 	"scripts/test-resume-state.mjs",
 	"scripts/test-ssh-skills.mjs",
 	"scripts/test-ssh-cwd.mjs",
@@ -59,6 +66,7 @@ const requiredThemeColors = [
 	"syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
 	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
 ].sort();
+const expectedCompactExtensionFiles = ["ansi.ts", "file-renderers.ts", "index.ts", "layout.ts", "renderers.ts"];
 const expectedFooterExtensionFiles = ["colors.ts", "index.ts"];
 const expectedDirtyExtensionFiles = ["index.ts"];
 const expectedExaExtensionFiles = ["index.ts"];
@@ -108,6 +116,7 @@ if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
 	"./extensions/ssh-remote/index.ts",
 	"./extensions/dirty-repo-guard/index.ts",
 	"./extensions/custom-footer/index.ts",
+	"./extensions/compact-tools/index.ts",
 	"./extensions/handoff/index.ts",
 	"./extensions/titlebar-spinner/index.ts",
 ])) {
@@ -142,6 +151,10 @@ if (JSON.stringify(dirtyExtensionFiles) !== JSON.stringify(expectedDirtyExtensio
 const exaExtensionFiles = readdirSync(join("extensions", "exa-search")).sort();
 if (JSON.stringify(exaExtensionFiles) !== JSON.stringify(expectedExaExtensionFiles)) {
 	fail(`非预期的 Exa extension 文件: ${exaExtensionFiles.join(", ")}`);
+}
+const compactExtensionFiles = readdirSync(join("extensions", "compact-tools")).sort();
+if (JSON.stringify(compactExtensionFiles) !== JSON.stringify(expectedCompactExtensionFiles)) {
+	fail(`非预期的 compact tools extension 文件: ${compactExtensionFiles.join(", ")}`);
 }
 const footerExtensionFiles = readdirSync(join("extensions", "custom-footer")).sort();
 if (JSON.stringify(footerExtensionFiles) !== JSON.stringify(expectedFooterExtensionFiles)) {

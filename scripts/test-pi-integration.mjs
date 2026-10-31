@@ -120,6 +120,121 @@ try {
 	const prompt = await emitStart();
 	assert.equal(prompt.skills.length, 2);
 	let runner = session.extensionRunner;
+	function checkCompactRenderer() {
+		if (typeof runner.resolveToolRenderers !== "function") {
+			for (const [name, factory] of [["bash", host.createBashToolDefinition], ["read", host.createReadToolDefinition], ["edit", host.createEditToolDefinition], ["write", host.createWriteToolDefinition]]) {
+				const native = factory(root);
+				const tool = runner.getToolDefinition(name);
+				assert.equal(tool.renderShell, native.renderShell, "Old hosts retain native shells (native edit itself uses self)");
+				if (name !== "bash") for (const slot of ["renderCall", "renderResult"]) assert.equal(tool[slot], native[slot]);
+			}
+			return;
+		}
+		const base = runner.getToolDefinition("bash");
+		const originalExecute = base.execute;
+		const renderers = runner.resolveToolRenderers("bash", () => base);
+		assert.equal(renderers.renderShell, "self");
+		assert.deepEqual(Object.keys(renderers).sort(), ["renderCall", "renderResult", "renderShell"]);
+		const ls = runner.getToolDefinition("ls");
+		assert.equal(runner.resolveToolRenderers("ls", () => ls), ls);
+		const before = commands.length;
+		const args = Object.freeze({ command: "printf 'FIRST_COMMAND'\nprintf 'LAST_COMMAND'" });
+		const component = new host.ToolExecutionComponent("bash", "render-fixture", args, { outputPad: 1 }, renderers, { requestRender() {} }, root);
+		component.markExecutionStarted(); component.setArgsComplete();
+		const text = () => tui.stripTerminalSequences(component.render(90).join("\n"));
+		assert.match(text(), /Bash.*运行中/);
+		const data = Object.freeze({ content: Object.freeze([{ type: "text", text: "FIRST_OUTPUT\nrow-2\nrow-3\nLAST_OUTPUT" }]), details: undefined, isError: false, durationMs: 2400 });
+		component.updateResult(data);
+		assert.match(text(), /✓ Bash.*2\.4s/); assert.doesNotMatch(text(), /FIRST_OUTPUT/);
+		assert.match(text(), /LAST_OUTPUT/);
+		assert.equal(text().match(/ctrl\+o/g)?.length, 1, "One shared expansion hint for command and output");
+		assert.ok(component.render(90).join("").includes(theme.getFgAnsi("success")));
+		component.setExpanded(true);
+		assert.match(text(), /FIRST_COMMAND/); assert.match(text(), /LAST_COMMAND/); assert.match(text(), /FIRST_OUTPUT/);
+		component.setExpanded(false); component.render(90);
+		assert.equal(component.handleMouse({ type: "click", button: "left", x: 2, y: 1, width: 90, height: component.render(90).length })?.handled, true);
+		assert.match(text(), /FIRST_OUTPUT/, "Native fullscreen click-to-expand remains available");
+		component.updateResult({ ...data, isError: true });
+		assert.match(text(), /✗ Bash/);
+		component.updateArgs({ command: 'node -e "' + "console.error('fixture');".repeat(10) + '"', timeout: 15 });
+		component.setExpanded(false);
+		component.updateResult({ ...data, isError: true, content: [{ type: "text", text: "REAL_ERROR_BODY\nERROR_CONTEXT\n\n\nCommand exited with code 1" }] });
+		assert.match(tui.stripTerminalSequences(component.render(90)[1]), /node -e "console\.error/, "Inline scripts use the same original-command preview as other tools");
+		assert.doesNotMatch(text(), /内联脚本/);
+		assert.match(text(), /REAL_ERROR_BODY/); assert.match(text(), /ERROR_CONTEXT/);
+		assert.match(text(), /Command exited with code 1/);
+		assert.equal(text().match(/ctrl\+o/g)?.length, 1);
+		assert.ok(tui.visibleWidth(component.render(200)[1]) <= 70, "Command preview is bounded even in wide terminals");
+		assert.doesNotMatch(text(), /超时上限|限 15s/);
+		component.setExpanded(true); assert.match(text(), /超时上限 15s/);
+		assert.match(text(), /console\.error\('fixture'\)/);
+		component.updateArgs({ command: 'node -e "CHAIN_DETAIL" && printf AFTER' });
+		component.setExpanded(false);
+		assert.match(tui.stripTerminalSequences(component.render(90)[1]), /node -e "CHAIN_DETAIL"/, "Command chains retain the original preview");
+		assert.match(text(), /CHAIN_DETAIL/);
+		for (const width of [1, 2, 8, 30, 90]) for (const line of component.render(width)) assert.ok(tui.visibleWidth(line) <= width);
+		assert.doesNotMatch(component.render(90).join(""), /\x1b\[48[;:]/, "Compact shell must not restore the large background box");
+		assert.equal(runner.getToolDefinition("bash").execute, originalExecute);
+		assert.equal(commands.length, before, "Rendering must never run commands");
+		checkFileRenderers();
+	}
+	function checkFileRenderers() {
+		const before = commands.length;
+		const fullPath = remoteCwd + "/目录".repeat(25) + "/sample.ts";
+		for (const name of ["read", "edit", "write"]) {
+			const base = runner.getToolDefinition(name);
+			const originalExecute = base.execute;
+			const renderers = runner.resolveToolRenderers(name, () => base);
+			assert.equal(renderers.renderShell, "self");
+			assert.deepEqual(Object.keys(renderers).sort(), ["renderCall", "renderResult", "renderShell"]);
+			const args = Object.freeze(name === "read" ? { path: fullPath, offset: 7, limit: 20 }
+				: name === "write" ? { path: fullPath, content: "const WRITE_FIRST = 1;\nconst second = 2;\nconst third = 3;\n\nconst WRITE_LAST = 4;\n" }
+				: { path: fullPath, edits: Object.freeze([Object.freeze({ oldText: "PLANNED_OLD", newText: "PLANNED_NEW" })]) });
+			const component = new host.ToolExecutionComponent(name, `render-${name}`, args, { outputPad: 1 }, renderers, { requestRender() {} }, root);
+			component.markExecutionStarted(); component.setArgsComplete();
+			const text = () => tui.stripTerminalSequences(component.render(90).join("\n"));
+			assert.match(text(), name === "read" ? /◌ Read.*L7–26.*读取中/ : name === "write" ? /◌ Write.*写入中/ : /◌ Edit.*编辑中/);
+			assert.doesNotMatch(text(), /PLANNED_|WRITE_FIRST/);
+			const details = name === "edit" ? Object.freeze(host.generateDiffString("const ACTUAL_OLD = 1;\nkeep\n", "const ACTUAL_NEW = 2;\nkeep\n")) : undefined;
+			const data = Object.freeze({ content: Object.freeze([Object.freeze({ type: "text", text: name === "read" ? "READ_FIRST\nrow-2\nrow-3\nREAD_LAST" : name === "write" ? "OPAQUE_WRITE_ACK" : "Successfully replaced text." })]), details, isError: false, durationMs: 45 });
+			component.updateResult(data);
+			assert.match(text(), name === "read" ? /✓ Read.*45ms/ : name === "write" ? /✓ Write.*45ms/ : /✓ Edit.*45ms/);
+			if (name === "read") { assert.match(text(), /READ_FIRST/); assert.doesNotMatch(text(), /READ_LAST/); }
+			else if (name === "write") { assert.match(text(), /WRITE_FIRST/); assert.doesNotMatch(text(), /WRITE_LAST|OPAQUE_WRITE_ACK|\+1 −1/); }
+			else { assert.match(text(), /\+1 −1/); assert.match(text(), /ACTUAL_OLD/); assert.match(text(), /ACTUAL_NEW/); }
+			assert.equal(text().match(/ctrl\+o/g)?.length, 1);
+			component.setExpanded(true);
+			assert.ok(text().replace(/\s/g, "").includes(fullPath.replace(/\s/g, "")), "Expanded paths retain the original remote path across soft wraps");
+			if (name === "read") assert.match(text(), /READ_LAST/);
+			if (name === "write") { assert.match(text(), /WRITE_LAST/); assert.match(text(), /OPAQUE_WRITE_ACK/); }
+			component.setExpanded(false); component.render(90);
+			assert.equal(component.handleMouse({ type: "click", button: "left", x: 2, y: 1, width: 90, height: component.render(90).length })?.handled, true);
+			assert.ok(text().replace(/\s/g, "").includes(fullPath.replace(/\s/g, "")), "Native mouse expansion still works for file tools");
+			component.setExpanded(false);
+			component.updateResult({ ...data, isError: true, content: [{ type: "text", text: "ACTUAL_ERROR\nERROR_CONTEXT\n\n\nCommand failed" }] });
+			assert.match(text(), /✗ (Read|Edit|Write)/); assert.match(text(), /ACTUAL_ERROR/); assert.match(text(), /ERROR_CONTEXT/);
+			assert.doesNotMatch(text(), /ACTUAL_OLD|ACTUAL_NEW|WRITE_FIRST|WRITE_LAST|\+1 −1/);
+			for (const expanded of [false, true]) {
+				component.setExpanded(expanded);
+				for (const width of [1, 2, 8, 30, 90]) for (const line of component.render(width)) assert.ok(tui.visibleWidth(line) <= width);
+			}
+			assert.doesNotMatch(component.render(90).join(""), /\x1b\[48[;:]/);
+			if (name === "read") {
+				const caps = tui.getCapabilities();
+				try {
+					tui.setCapabilities({ ...caps, images: "iterm2" });
+					const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=";
+					const image = Object.freeze({ type: "image", mimeType: "image/png", data: png });
+					component.updateResult({ content: Object.freeze([image]), isError: false });
+					assert.match(component.render(90).join(""), /\x1b\]1337;File=/, "Native inline image transport is preserved");
+					assert.equal(image.data, png);
+				} finally { tui.setCapabilities(caps); }
+			}
+			assert.equal(runner.getToolDefinition(name).execute, originalExecute);
+		}
+		assert.equal(commands.length, before, "Read/edit/write renderers must not call SSH or run commands");
+	}
+	checkCompactRenderer();
 	async function execute(name, input) {
 		assert.equal(await runner.emitToolCall({ type: "tool_call", toolName: name, toolCallId: `integration-${name}`, input }), undefined);
 		return runner.getToolDefinition(name).execute(`integration-${name}`, input, undefined, undefined, runner.createContext());
@@ -131,8 +246,23 @@ try {
 	]) {
 		files.set(expected, "old content\n");
 		assert.equal((await execute("read", { path: input })).content[0].text, "old content\n");
-		await execute("write", { path: input, content: "new content\n" });
+		const writeInput = Object.freeze({ path: input, content: "new content\n" });
+		const writeResult = await execute("write", writeInput);
 		assert.equal(files.get(expected), "new content\n");
+		if (typeof runner.resolveToolRenderers === "function") {
+			const before = commands.length;
+			const original = JSON.stringify(writeResult);
+			const renderers = runner.resolveToolRenderers("write", () => runner.getToolDefinition("write"));
+			const component = new host.ToolExecutionComponent("write", "actual-write-result", writeInput, {}, renderers, { requestRender() {} }, root);
+			component.setArgsComplete(); component.markExecutionStarted();
+			component.updateResult({ ...writeResult, isError: false });
+			assert.match(tui.stripTerminalSequences(component.render(90).join("\n")), /new content/);
+			component.setExpanded(true);
+			const text = tui.stripTerminalSequences(component.render(90).join("\n")).replace(/\s/g, "");
+			assert.ok(text.includes(writeResult.content[0].text.replace(/\s/g, "")), "Preserve the actual SDK write result without parsing or rewriting it");
+			assert.equal(JSON.stringify(writeResult), original);
+			assert.equal(commands.length, before, "Rendering an actual write result must not repeat the write");
+		}
 		await execute("edit", { path: input, edits: [{ oldText: "new content", newText: "edited content" }] });
 		assert.equal(files.get(expected), "edited content\n");
 	}
@@ -184,6 +314,7 @@ try {
 	assert.equal((await nested("bash", { command: "pwd" })).isError, false);
 	assert.equal(evidence().runs[0].revision, evidence().revision);
 	await session.reload(); runner = session.extensionRunner;
+	checkCompactRenderer();
 	assert.ok(evidence().runs[0].revision < evidence().revision, "Reload retains evidence, but cannot restore the verified files");
 	await session.prompt("/verify add npm install"); seedCaller();
 	const beforeBlocked = commands.length;
@@ -247,7 +378,7 @@ try {
 	assert.deepEqual(errors, []);
 	assert.equal(readFileSync(parent.getSessionFile(), "utf8"), beforeParent);
 	assert.equal(readFileSync(child.getSessionFile(), "utf8"), beforeChild);
-	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/atomic-write/verification/archive/reload verified (SSH simulated)`);
+	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/atomic-write/verification/archive/reload verified; Bash/read/edit/write UI: ${typeof runner.resolveToolRenderers === "function" ? "compact" : "native fallback"} (SSH simulated)`);
 } finally {
 	session?.dispose();
 	cp.spawn = originalSpawn; syncBuiltinESMExports();
