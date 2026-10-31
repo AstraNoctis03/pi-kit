@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import sshRemote from "../extensions/ssh-remote/index.ts";
 import { SshClient } from "../extensions/ssh-remote/transport.ts";
 import presetsExtension from "../extensions/presets/index.ts";
@@ -25,6 +26,7 @@ import {
 } from "../extensions/sensitive-paths/config.ts";
 
 process.env.PI_CODING_AGENT_DIR = path.join(process.cwd(), ".workflow-test-config-does-not-exist");
+initTheme("dark", false); // Native Shell highlighting shares the host's active theme.
 
 // Exercise Pi's real prompt renderer/diff without creating a live agent or network request.
 const agentEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
@@ -133,7 +135,8 @@ const safetyDialog = new SafetyDialog(
 	(result) => { safetyDialogResult = result; },
 );
 const safetyDialogOutput = safetyDialog.render(80).join("\n");
-assert.match(safetyDialogOutput, /\[bold\]→ 确认\[\/\]/, "The default selection should have non-color emphasis");
+assert.match(safetyDialogOutput, /→ 确认/, "The arrow keeps selection visible without color");
+assert.doesNotMatch(safetyDialogOutput, /\[bold\]→ 确认/, "Do not add bold to the selected option");
 assert.match(safetyDialogOutput, /\[muted\].*选择/, "Safety shortcuts should remain readable");
 safetyDialog.handleInput("\r");
 assert.deepEqual(safetyDialogResult, { allowed: true }, "The shared confirmation must default to Yes");

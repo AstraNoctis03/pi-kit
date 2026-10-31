@@ -1,8 +1,10 @@
-import { DynamicBorder, keyText, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { highlightCode, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import {
 	Box,
 	Container,
+	type Component,
 	type Focusable,
+	getKeybindings,
 	Input,
 	matchesKey,
 	type SelectItem,
@@ -11,6 +13,8 @@ import {
 	Text,
 	truncateToWidth,
 	type TUI,
+	visibleWidth,
+	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import {
 	DEFAULT_CONFIRMATION_COLORS,
@@ -26,6 +30,23 @@ function confirmationText(text: string): string {
 		const code = character.charCodeAt(0);
 		return code <= 0xff ? `\\x${code.toString(16).padStart(2, "0")}` : `\\u${code.toString(16).padStart(4, "0")}`;
 	});
+}
+
+type DialogKeybindings = Pick<ReturnType<typeof getKeybindings>, "getKeys">;
+
+function confirmationHeading(title: string, theme: Theme, colors: ConfirmationColors): Component {
+	return {
+		render(width) {
+			if (width < 1) return [];
+			const label = paintConfirmationColor(theme, colors.title, theme.bold("⚠ " + confirmationText(title)));
+			return wrapTextWithAnsi(label, Math.max(1, width - 4)).map((line) => {
+				const prefix = paintConfirmationColor(theme, colors.border, "─ ");
+				const suffix = paintConfirmationColor(theme, colors.border, " " + "─".repeat(Math.max(0, width - visibleWidth(line) - 3)));
+				return truncateToWidth(prefix + line + suffix, width, "…");
+			});
+		},
+		invalidate() {},
+	};
 }
 
 export interface ConfirmationOptions {
@@ -53,6 +74,8 @@ export class SafetyDialog implements Focusable {
 	private readonly done: (result: SafetyConfirmationResult) => void;
 	private readonly colors: ConfirmationColors;
 	private readonly allowFeedback: boolean;
+	private readonly keybindings: DialogKeybindings;
+	private subjectText: string | undefined;
 	private mode: "select" | "input" = "select";
 	private _focused = false;
 
@@ -73,6 +96,7 @@ export class SafetyDialog implements Focusable {
 		done: (result: SafetyConfirmationResult) => void,
 		colors: ConfirmationColors = DEFAULT_CONFIRMATION_COLORS,
 		options: ConfirmationOptions = {},
+		keybindings: DialogKeybindings = getKeybindings(),
 	) {
 		this.tui = tui;
 		this.theme = theme;
@@ -82,13 +106,14 @@ export class SafetyDialog implements Focusable {
 		this.done = done;
 		this.colors = colors;
 		this.allowFeedback = options.allowFeedback !== false;
+		this.keybindings = keybindings;
 		const items: SelectItem[] = [
 			{ value: YES, label: "确认" },
 			{ value: NO, label: "取消" },
 		];
 		this.list = new SelectList(items, items.length, {
-			selectedPrefix: (text) => paintConfirmationColor(theme, colors.selected, theme.bold(text)),
-			selectedText: (text) => paintConfirmationColor(theme, colors.selected, theme.bold(text)),
+			selectedPrefix: (text) => paintConfirmationColor(theme, colors.selected, text),
+			selectedText: (text) => paintConfirmationColor(theme, colors.selected, text),
 			description: (text) => theme.fg("dim", text),
 			scrollInfo: (text) => theme.fg("dim", text),
 			noMatch: (text) => theme.fg("warning", text),
@@ -129,18 +154,16 @@ export class SafetyDialog implements Focusable {
 
 	render(width: number): string[] {
 		if (width < 1) return [];
-		const panelWidth = Math.min(width, 88);
-		return this.container.render(panelWidth).map((line) => truncateToWidth(line, panelWidth, "…"));
+		return this.container.render(width).map((line) => truncateToWidth(line, width, "…"));
 	}
 
 	invalidate(): void {
+		this.subjectText = undefined;
 		this.container.invalidate();
 		this.rebuild();
 	}
 
 	private rebuild(): void {
-		const border = () => new DynamicBorder((text: string) =>
-			paintConfirmationColor(this.theme, this.colors.border, text));
 		const titles = new Map([
 			["Safety confirmation", "安全确认"],
 			["Sensitive path confirmation", "敏感路径确认"],
@@ -149,30 +172,37 @@ export class SafetyDialog implements Focusable {
 		const separatorIndex = this.subject.indexOf(": ");
 		const rawLabel = separatorIndex > 0 ? this.subject.slice(0, separatorIndex) : "Operation";
 		const label = new Map([["Command", "命令"], ["Path", "路径"], ["Action", "操作"], ["Operation", "操作"]]).get(rawLabel) ?? rawLabel;
-		const value = separatorIndex > 0 ? this.subject.slice(separatorIndex + 2) : this.subject;
-		const key = (action: Parameters<typeof keyText>[0]) => keyText(action) || "未绑定";
+		const value = confirmationText(separatorIndex > 0 ? this.subject.slice(separatorIndex + 2) : this.subject);
+		const keyNames = new Map([["up", "↑"], ["down", "↓"], ["left", "←"], ["right", "→"], ["escape", "Esc"], ["esc", "Esc"], ["return", "Enter"]]);
+		const key = (action: Parameters<DialogKeybindings["getKeys"]>[0]) => {
+			// Show only the primary binding; all aliases remain handled by Input/SelectList.
+			const primary = this.keybindings.getKeys(action)[0];
+			return primary ? primary.split("+").map((part) => keyNames.get(part)
+				?? (part === "alt" && process.platform === "darwin" ? "Option" : part.charAt(0).toUpperCase() + part.slice(1))).join("+") : "未绑定";
+		};
 
 		this.container.clear();
-		this.container.addChild(border());
-		this.container.addChild(new Text(
-			paintConfirmationColor(this.theme, this.colors.title, this.theme.bold("⚠ " + confirmationText(titles.get(this.title) ?? this.title))),
-			1,
-			0,
-		));
+		this.container.addChild(confirmationHeading(titles.get(this.title) ?? this.title, this.theme, this.colors));
 		this.container.addChild(new Text(this.theme.fg("text", confirmationText(this.reason)), 1, 0));
 		if (this.subject) {
 			this.container.addChild(new Spacer(1));
 			this.container.addChild(new Text(this.theme.fg("muted", confirmationText(label)), 1, 0));
-			// Wrap the entire operation, never replace it with a shortened summary.
-			this.container.addChild(new Text(this.theme.fg("text", confirmationText(value)), 1, 0));
+			// Highlight only known command subjects after exposing every control byte.
+			// Large commands stay complete, without expensive syntax processing.
+			this.subjectText ??= this.theme.fg(rawLabel === "Path" ? "accent" : "text",
+				rawLabel === "Command" && value.length <= 16_384 ? highlightCode(value, "bash").join("\n") : value);
+			this.container.addChild(new Text(this.subjectText, 2, 0));
 		}
 		this.container.addChild(new Spacer(1));
 		const controls = new Box(1, 0);
 		if (this.mode === "select") {
 			controls.addChild(this.list);
 			const canExplain = this.allowFeedback && this.list.getSelectedItem()?.value === NO;
-			const help = `${key("tui.select.up")}/${key("tui.select.down")} 选择 · ${key("tui.select.confirm")} 确认 · ${key("tui.select.cancel")} 取消`
-				+ (canExplain ? " · tab 补充原因" : "");
+			const up = key("tui.select.up");
+			const down = key("tui.select.down");
+			const navigation = up === "↑" && down === "↓" ? "↑↓" : `${up}/${down}`;
+			const help = `${navigation} 选择 · ${key("tui.select.confirm")} 确认 · ${key("tui.select.cancel")} 取消`
+				+ (canExplain ? " · Tab 补充原因" : "");
 			controls.addChild(new Text(this.theme.fg("muted", help), 0, 0));
 		} else {
 			controls.addChild(new Text(this.theme.fg("muted", "补充拒绝原因（可留空）"), 0, 0));
@@ -180,7 +210,6 @@ export class SafetyDialog implements Focusable {
 			controls.addChild(new Text(this.theme.fg("muted", `${key("tui.input.submit")} 拒绝并提交 · ${key("tui.select.cancel")} 返回`), 0, 0));
 		}
 		this.container.addChild(controls);
-		this.container.addChild(border());
 	}
 }
 
@@ -203,8 +232,8 @@ export async function showThemedConfirmation(
 		ctx.ui.notify(`Confirmation color config is invalid; using defaults: ${loaded.error}`, "warning");
 	}
 	if (!loaded.error) reportedColorError = undefined;
-	return ctx.ui.custom<SafetyConfirmationResult>((tui, theme, _keybindings, done) =>
-		new SafetyDialog(tui, theme, title, reason, subject, done, loaded.colors, options));
+	return ctx.ui.custom<SafetyConfirmationResult>((tui, theme, keybindings, done) =>
+		new SafetyDialog(tui, theme, title, reason, subject, done, loaded.colors, options, keybindings));
 }
 
 export function showSafetyConfirmation(

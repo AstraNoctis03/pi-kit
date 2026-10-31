@@ -11,9 +11,9 @@ export interface ConfirmationColors {
 }
 
 export const DEFAULT_CONFIRMATION_COLORS: ConfirmationColors = {
-	border: "#ff9e64",
+	border: "#b8754b",
 	title: "#e0af68",
-	selected: "#73daca",
+	selected: "#d5b778",
 };
 
 export function confirmationColorsPath(): string {

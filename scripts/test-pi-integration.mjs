@@ -302,8 +302,11 @@ try {
 				return new Promise((done) => {
 					const component = factory({ requestRender() {} }, theme, keybindings, done);
 					component.focused = true;
-					const text = tui.stripTerminalSequences(component.render(120).join("\n"));
-					assert.match(text, /安全确认/); assert.match(text, /npm install/); assert.match(text, /^\s*→ 确认\s*$/m);
+					const lines = component.render(120);
+					assert.equal(tui.visibleWidth(lines[0]), 120, "Confirmation heading fills the host width");
+					const text = tui.stripTerminalSequences(lines.join("\n"));
+					assert.match(text, /^─ ⚠ 安全确认 ─/); assert.match(text, /npm install/); assert.match(text, /^\s*→ 确认\s*$/m);
+					assert.match(text, /↑↓ 选择 · Enter 确认 · Esc 取消/);
 					displayed++;
 					if (approve) component.handleInput("\r");
 					else {
