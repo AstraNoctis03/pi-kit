@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -14,6 +14,10 @@ const originalRun = SshClient.prototype.run;
 const remoteCwd = "/srv/project with spaces";
 const remoteHome = "/home/fixture";
 try {
+	const skillDir = path.join(temp, "skill-fixture");
+	mkdirSync(skillDir);
+	const skillPath = path.join(skillDir, "SKILL.md");
+	writeFileSync(skillPath, "# Local skill fixture\n");
 	for (const localCwd of [temp, homedir()]) {
 		const files = new Map();
 		const commands = [];
@@ -82,7 +86,6 @@ try {
 		assert.equal(output, remoteCwd, "! commands use the remote workspace, not the launch directory or home");
 		assert.equal(ctx.cwd, localCwd, "Do not mutate other extensions' local context");
 
-		const skillPath = path.resolve("skills", "code-review", "SKILL.md");
 		const prompt = { prompt: "Review", systemPromptOptions: { skills: [{ filePath: skillPath }], sections: {}, cwd: localCwd } };
 		for (const handler of handlers.get("before_agent_start")) await handler(prompt, ctx);
 		const beforeSkill = commands.length;

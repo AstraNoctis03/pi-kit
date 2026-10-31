@@ -10,10 +10,13 @@ import { SshClient } from "../extensions/ssh-remote/transport.ts";
 const root = mkdtempSync(path.join(tmpdir(), "pi-kit-ssh-skills-"));
 const originalRun = SshClient.prototype.run;
 try {
-	const skillFiles = ["code-review", "debugging"].map((name) => ({
-		name, filePath: path.resolve("skills", name, "SKILL.md"),
-		baseDir: path.resolve("skills", name), description: name,
-	}));
+	const skillFiles = ["fixture-alpha", "fixture-beta"].map((name) => {
+		const baseDir = path.join(root, "skill-fixtures", name);
+		mkdirSync(baseDir, { recursive: true });
+		const filePath = path.join(baseDir, "SKILL.md");
+		writeFileSync(filePath, `---\nname: ${name}\ndescription: SSH test fixture\n---\n# Fixture skill\n`);
+		return { name, filePath, baseDir, description: name };
+	});
 	const missing = path.join(root, "missing.md");
 	writeFileSync(missing, "Local temporary instruction");
 	const targetA = path.join(root, "target-a");
@@ -60,8 +63,8 @@ try {
 		assert.equal(calls.length, before, "Loading a registered local skill must not make SSH calls");
 	}
 	const limited = await read.execute("limited", { path: skillFiles[0].filePath, offset: 2, limit: 2 }, undefined, undefined, ctx);
-	assert.match(limited.content[0].text, /name: code-review/);
-	assert.doesNotMatch(limited.content[0].text, /# Code Review/, "Preserve native read offset/limit semantics");
+	assert.match(limited.content[0].text, /name: fixture-alpha/);
+	assert.doesNotMatch(limited.content[0].text, /# Fixture skill/, "Preserve native read offset/limit semantics");
 	const unrelated = path.join(root, "local-notes.md");
 	writeFileSync(unrelated, "LOCAL PRIVATE MARKER");
 	const remoteRead = await read.execute("remote", { path: unrelated }, undefined, undefined, ctx);
@@ -81,7 +84,7 @@ try {
 
 	const beforeEdit = readFileSync(skillFiles[0].filePath, "utf8");
 	await assert.rejects(() => tools.get("edit").execute("edit", {
-		path: skillFiles[0].filePath, edits: [{ oldText: "# Code Review", newText: "Changed" }],
+		path: skillFiles[0].filePath, edits: [{ oldText: "# Fixture skill", newText: "Changed" }],
 	}, undefined, undefined, ctx), /incorrectly routed to SSH/);
 	assert.equal(readFileSync(skillFiles[0].filePath, "utf8"), beforeEdit, "The local exception must not apply to edits");
 

@@ -67,9 +67,18 @@ function harness(manager = SessionManager.inMemory(process.cwd()), flag) {
 		waitForIdle: async () => {},
 		switchSession: async (file) => { switches.push(file); return { cancelled: false }; },
 		ui: {
-			theme: { fg: (_color, text) => text }, setStatus() {},
+			theme: { fg: (_color, text) => text, bold: (text) => text }, setStatus() {},
 			notify(text, level) { notices.push({ text, level }); },
 			confirm: async () => true,
+			async custom(factory) {
+				const allowed = await ctx.ui.confirm(); // Existing test-controlled approval choice.
+				return new Promise((done) => {
+					const component = factory({ requestRender() {} }, ctx.ui.theme, keybindings, done);
+					component.focused = true;
+					assert.match(component.render(100).join("\n"), /认领当前会话/);
+					component.handleInput(allowed ? "\r" : "\x1b");
+				});
+			},
 		},
 	};
 	async function emit(name, event = {}) {

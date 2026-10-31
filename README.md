@@ -1,20 +1,19 @@
 # pi-kit
 
-个人 [Pi](https://pi.dev) 配置包：安全、SSH 与工作流扩展，以及两个开发 Skills。
+个人 [Pi](https://pi.dev) 配置包：安全、SSH 与工作流扩展。
 
 - **Safety Guard**：阻止灾难性删除和 WSL/Linux 对 Windows 挂载路径的写入；通过主题化选择框确认删除、依赖变更、Git 写操作及系统级命令
 - **Sensitive Paths**：阻止直接修改 Git 元数据和私钥，并在写入环境变量、凭据及 secrets 文件前确认
 - **SSH Remote**：按需将 `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` 和 `!` 命令路由到 SSH 服务器
 - **Exa Search**：通过本地只读 `exa_search` 工具检索最新网页信息，在 SSH 与 Review 模式下仍可使用
 - **Tokyo Night Theme**：统一原生对话、Handoff、工具区域、Markdown、输入框与扩展界面的配色
-- **Compact Tools**：Bash / Read / Edit / Write 紧凑彩色展示，折叠命令、文件预览与 diff；仅修改渲染，不替换执行器（已验证 Pi 1.4.0）
+- **Compact Tools**：Bash / Read / Edit / Write / Exa Search 紧凑彩色展示，折叠命令、文件预览、diff 与搜索详情；仅修改渲染，不替换执行器（已验证 Pi 1.4.0）
 - **Custom Footer**：突出显示本地/SSH 目标、Git 分支、模型、思考等级和上下文用量，并支持独立配色
 - **Presets**：提供严格只读的 `review` 工作流，统一限制工具、Shell 命令和提示指令
 - **Verification**：登记验收命令，记录真实工具退出码和执行环境，修改后使旧证据过期，不自动执行或续跑
 - **Handoff**：将长会话压缩为可编辑的新会话启动提示
 - **Dirty Repo Guard**：在切换、Fork 或 Clone 会话前检查本地 Git 工作区；SSH 模式直接跳过
 - **Titlebar Spinner**：Agent 工作时在终端标题显示动画和当前目标
-- **Skills**：`code-review`、`debugging`
 - **AGENTS.md**：可选的个人开发规范
 
 ## 安装
@@ -37,8 +36,7 @@ pi install git:github.com/AstraNoctis03/pi-kit@v0.2.0
 
 ```bash
 pi --no-extensions --no-skills \
-  -e ./extensions/safety-guard/index.ts \
-  --skill ./skills/code-review/SKILL.md
+  -e ./extensions/safety-guard/index.ts
 ```
 
 ## Safety Guard
@@ -49,7 +47,7 @@ pi --no-extensions --no-skills \
 - `rm -rf /` 和递归删除 home
 - 在 WSL/Linux 中通过工具或 Shell 写入 `/mnt/c`、`/mnt/d`、`C:\`、`D:\`
 
-要求确认（`Yes` / `No`；选中 `No` 后可按 Tab 输入反馈）：
+要求确认（交互终端显示“确认 / 取消”；选中取消后可按 Tab 输入拒绝反馈）：
 
 - 删除文件或目录
 - 安装、卸载或更新依赖
@@ -58,7 +56,9 @@ pi --no-extensions --no-skills \
 
 普通文件编辑、测试、lint、build、Git 只读命令，以及原生 Windows 中的项目文件修改不会触发确认。
 
-Safety Guard、Sensitive Paths 和 Dirty Repo Guard 共享主题化确认框，默认选中 `Yes`。边框、标题和当前选项使用可配置的自定义强调色；正文仍使用 Pi Theme 以保证可读性。配置文件：
+Safety Guard、Sensitive Paths 和 Dirty Repo Guard 在 TUI 中共享无整块底色、最多 88 列的紧凑确认框，会话认领也采用相同样式。完整命令、路径和风险原因自动换行，不使用工具预览式折叠；控制字符与双向显示控制符以可见转义展示，不丢弃其中的操作文本。操作提示跟随已配置的快捷键。默认仍选中确认（原 `Yes`），取消、拒绝反馈及授权范围不变；会话认领保持简单确认，不新增反馈步骤。RPC 仍使用原生确认接口，无 UI 时继续拒绝。
+
+边框、标题和当前选项保留橙、金、青的可配置强调色；正文仍使用 Pi Theme 以保证可读性。此统一不接管宿主设置选择器或第三方插件弹窗。配置文件：
 
 ```text
 ~/.pi/agent/confirmation-colors.json
@@ -127,7 +127,7 @@ SSH 通过结构化提示的 `cwd` 与独立 `pi_kit_ssh` 章节标明远程目�
 
 文件工具在进入 Pi 原生路径归一化之前按远端规则解释输入：相对路径基于远程工作目录、`../` 指向其父目录、`~/` 指向远程 home；Bash 和用户 `!` 命令也从远程工作目录启动。不会把本机启动目录当作远端目录，也不修改其他扩展看到的本地 `ctx.cwd`。远端路径使用独立的虚拟命名空间适配原生工具，避免与本机 home、启动目录或 Windows `/a/...` 盘符语法混淆；不会为此在本机创建目录。Windows 下以 `/` 开头的输入按远端 POSIX 路径解释，不会通过盘符解析命中本机 skill 例外。
 
-Skill 仍由本机 Pi 加载。`read` 对当前已加载 skill 列表中的**入口文件**（例如本机 `pi-kit/skills/code-review/SKILL.md`）使用受限的本地只读读取，不会把它们映射到服务器。其余文件读写、编辑、Shell 和搜索仍走 SSH；此例外不允许读取任意本地文件或整个 skill 目录，不执行本地脚本。入口文件丢失或读取期间符号链接目标改变时会报错，不会再尝试远程读取。额外的本地参考资料/脚本不在此例外内，需要另行处理，不能假定它们存在于远端。
+用户另行加载的 Skill 仍由本机 Pi 管理。`read` 对当前已加载 skill 列表中的**入口文件**（例如本机 `~/.pi/agent/skills/example/SKILL.md`）使用受限的本地只读读取，不会把它们映射到服务器。其余文件读写、编辑、Shell 和搜索仍走 SSH；此例外不允许读取任意本地文件或整个 skill 目录，不执行本地脚本。入口文件丢失或读取期间符号链接目标改变时会报错，不会再尝试远程读取。额外的本地参考资料/脚本不在此例外内，需要另行处理，不能假定它们存在于远端。
 
 新 Session 会独立记录执行环境与完整工作目录，并自动添加名称前缀，例如 `[LOCAL] 修复登录测试` 或 `[SSH compute-01:project] 修复登录测试`。SSH 使用远端短主机名识别服务器，`s1`、`s1d` 等连接别名不影响归属；探测失败时回退到别名。本地环境使用本机主机名区分。服务器应使用不同的主机名；改主机名会被视为环境改变。
 
@@ -197,6 +197,8 @@ setx EXA_API_KEY "your-api-key"
 ```
 
 设置后完全重启 Pi。工具不会打印 API Key，并会固定超时、清理控制字符、截断超大输出，同时返回 Exa 报告的单次请求费用。网页结果属于不可信外部输入，回答时应核对并引用返回的 URL。
+
+Pi 1.4.0 使用独立的紧凑渲染：标题显示查询和耗时，正文显示真实结果数、已报告费用及前 3 条标题/来源。展开保留原始查询参数、全部已返回的摘要、日期和提示；错误正文与结果截断警告保持可见。只识别本工具既有的结果格式，无法识别的历史结果保守展示原文。搜索请求、返回文本、元数据、会话日志和模型上下文不变，渲染不会再次发请求；旧宿主保持原生工具显示。
 
 ## Presets
 
@@ -296,7 +298,7 @@ Theme: pi-kit-tokyo-night
 
 ## Compact Tools
 
-Bash、Read、Edit、Write 统一采用无整块底色的紧凑展示。Bash 示例：
+Bash、Read、Edit、Write、Exa Search 统一采用无整块底色的紧凑展示。Bash 示例：
 
 ```text
 ✓ Bash · npm test · 1.2s
@@ -319,7 +321,7 @@ Read 突出文件路径、请求的行范围与耗时，预览开头 3 个屏幕
 
 Edit 显示路径、耗时和实际结果中的增删行数，预览最多 6 个屏幕行，展开可查看完整的已返回 diff。直接复用 Pi 的原生 diff 绘制，保留增删色与词级高亮；不会为渲染预读本机文件，也不把待执行的替换当成已完成的改动。读取和编辑失败时优先显示真实错误正文，工具截断警告始终可见，路径与内容共用一条展开提示。
 
-Write 显示路径、耗时和宿主执行状态；成功后预览提交的 `content` 参数及原始结果，折叠正文最多 3 个屏幕行，展开保留完整提交内容与原始结果。内容预览不是写后读回，也不生成 diff、猜测新增/覆盖或推算实际字节/行数；失败时只显示真实错误，不把拟写入内容当成成功结果。不会为展示读取文件或再次写入。
+Write 显示路径、耗时和宿主执行状态；已开始但未完成的调用显示“处理中”，涵盖等待审批。成功后预览提交的 `content` 参数及原始结果，折叠正文最多 3 个屏幕行，展开保留完整提交内容与原始结果。内容预览不是写后读回，也不生成 diff、猜测新增/覆盖或推算实际字节/行数；失败时只显示真实错误，不把拟写入内容当成成功结果。不会为展示读取文件或再次写入。
 
 Bash 保留常规 ANSI 前景色和粗体，过滤背景色、隐藏文字、光标/清屏及 OSC 控制。文件内容在语法/diff 着色前清理终端控制，保留原生 diff 生成的词级反显。此处理只作用于展示，不修改实际命令、工具结果、会话日志、模型上下文或 `/verify` 证据，不影响 SSH 与安全守卫。其他工具及用户 `!` 命令暂不更改。
 
@@ -409,9 +411,6 @@ pi-kit/
 │   ├── ssh-remote/
 │   ├── titlebar-spinner/
 │   └── verification/
-├── skills/
-│   ├── code-review/SKILL.md
-│   └── debugging/SKILL.md
 ├── themes/
 │   └── pi-kit-tokyo-night.json
 ├── scripts/
@@ -429,7 +428,7 @@ git diff --check
 
 GitHub Actions 使用 Node.js 24，在 Ubuntu 和 Windows 上于 main Push 与 Pull Request 中自动运行同一套检查。开发依赖保留 Pi 0.99.2 基线，另外在临时目录安装隔离的 Pi 1.4.0 主机运行 SDK 集成测试，不修改项目依赖或 lockfile。
 
-`npm test` 包含真实 SDK 加载全部扩展、工具调用与守卫、SSH 路径、skill 读取、验收记录、归档与重载测试。SDK 测试的 SSH 进程由内存模拟传输替代，不连接服务器、不调用模型、不执行测试中的危险命令字符串。
+`npm test` 包含真实 SDK 加载全部扩展、工具调用与守卫、SSH 路径、skill 读取、验收记录、归档与重载测试。Skill 边界测试使用临时样本，不再依赖或提供内置 Skill。SDK 测试的 SSH 进程由内存模拟传输替代，不连接服务器、不调用模型、不执行测试中的危险命令字符串。
 
 `npm run test:ssh` 另含本地 Bash/GNU coreutils 的真实临时文件测试：截断/等长损坏输入、权限与符号链接、硬链接拒绝、属性复制/提交失败、取消和普通编辑。Linux 使用 `/tmp`；Windows 使用已安装的 WSL 且只写其 `/tmp`，不安装发行版；无 WSL 时仅跳过这组 Unix 文件系统用例，Windows 模拟传输/SDK 测试照常运行。真实网络中断仍需另行验证。
 

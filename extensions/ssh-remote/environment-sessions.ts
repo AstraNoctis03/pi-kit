@@ -15,6 +15,7 @@ import {
 	type SessionEnvironment,
 } from "./environment.ts";
 import { showEnvironmentPicker } from "./resume-picker.ts";
+import { showThemedConfirmation } from "../safety-guard/dialog.ts";
 import { SessionIndex } from "./session-index.ts";
 import { ResumeStateStore } from "./resume-state.ts";
 import { sessionTargetLabel } from "./session-label.ts";
@@ -47,8 +48,8 @@ export function createEnvironmentSessions(pi: ExtensionAPI, onClaim: (ctx: Exten
 			ctx.ui.notify("Invalid environment metadata; refusing to overwrite it.", "error");
 			return;
 		}
-		if (!ctx.hasUI || !await ctx.ui.confirm("认领当前会话？",
-			`请确认历史属于当前环境：${environmentDescription(current)}`)) return;
+		if (!ctx.hasUI || !(await showThemedConfirmation(ctx, "认领当前会话？",
+			`请确认历史属于当前环境：${environmentDescription(current)}`, "", { allowFeedback: false })).allowed) return;
 		pi.appendEntry(ENVIRONMENT_ENTRY, current);
 		owners.set(ctx.sessionManager, current);
 		onClaim(ctx);

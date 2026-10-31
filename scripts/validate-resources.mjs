@@ -10,6 +10,7 @@ const requiredFiles = [
 	"package.json",
 	"tsconfig.json",
 	"extensions/compact-tools/ansi.ts",
+	"extensions/compact-tools/exa-renderers.ts",
 	"extensions/compact-tools/file-renderers.ts",
 	"extensions/compact-tools/index.ts",
 	"extensions/compact-tools/layout.ts",
@@ -46,16 +47,15 @@ const requiredFiles = [
 	"scripts/test-theme.mjs",
 	"scripts/test-compact-tools.mjs",
 	"scripts/test-file-tools.mjs",
+	"scripts/test-exa-ui.mjs",
+	"scripts/test-confirmation-ui.mjs",
 	"scripts/test-resume-state.mjs",
 	"scripts/test-ssh-skills.mjs",
 	"scripts/test-ssh-cwd.mjs",
 	"scripts/test-ssh-write.mjs",
 	"scripts/test-pi-integration.mjs",
 	"themes/pi-kit-tokyo-night.json",
-	"skills/code-review/SKILL.md",
-	"skills/debugging/SKILL.md",
 ];
-const expectedSkills = ["code-review", "debugging"];
 const expectedThemeFiles = ["pi-kit-tokyo-night.json"];
 const requiredThemeColors = [
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text", "thinkingText",
@@ -66,7 +66,7 @@ const requiredThemeColors = [
 	"syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
 	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
 ].sort();
-const expectedCompactExtensionFiles = ["ansi.ts", "file-renderers.ts", "index.ts", "layout.ts", "renderers.ts"];
+const expectedCompactExtensionFiles = ["ansi.ts", "exa-renderers.ts", "file-renderers.ts", "index.ts", "layout.ts", "renderers.ts"];
 const expectedFooterExtensionFiles = ["colors.ts", "index.ts"];
 const expectedDirtyExtensionFiles = ["index.ts"];
 const expectedExaExtensionFiles = ["index.ts"];
@@ -86,18 +86,6 @@ function readText(path) {
 	return readFileSync(path, "utf8").replace(/\r\n/g, "\n");
 }
 
-function parseFrontmatter(path) {
-	const text = readText(path);
-	const match = text.match(/^---\n([\s\S]*?)\n---\n/);
-	if (!match) fail(`无效的 skill frontmatter: ${path}`);
-	return Object.fromEntries(
-		match[1].split("\n").flatMap((line) => {
-			const field = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-			return field ? [[field[1], field[2].replace(/^["']|["']$/g, "").trim()]] : [];
-		}),
-	);
-}
-
 for (const path of requiredFiles) {
 	if (!existsSync(path) || !statSync(path).isFile() || !readText(path).trim()) fail(`缺少或为空: ${path}`);
 }
@@ -105,7 +93,7 @@ for (const path of requiredFiles) {
 const pkg = JSON.parse(readText("package.json"));
 if (pkg.name !== "pi-kit" || pkg.private !== true) fail("无效的 package identity");
 if (!pkg.keywords?.includes("pi-package")) fail("keywords 必须包含 pi-package");
-if (JSON.stringify(pkg.pi?.skills) !== JSON.stringify(["./skills"])) fail("无效的 pi.skills manifest");
+if (pkg.pi?.skills !== undefined || existsSync("skills")) fail("此包不再提供内置 Skills");
 if (JSON.stringify(pkg.pi?.themes) !== JSON.stringify(["./themes/pi-kit-tokyo-night.json"])) fail("无效的 pi.themes manifest");
 if (JSON.stringify(pkg.pi?.extensions) !== JSON.stringify([
 	"./extensions/exa-search/index.ts",
@@ -133,15 +121,6 @@ for (const filename of expectedThemeFiles) {
 	if (theme.name !== filename.replace(/\.json$/, "")) fail(`Theme 名称与文件名不一致: ${filename}`);
 	const colors = Object.keys(theme.colors ?? {}).sort();
 	if (JSON.stringify(colors) !== JSON.stringify(requiredThemeColors)) fail(`Theme 颜色 Token 不完整: ${filename}`);
-}
-
-const skillDirs = readdirSync("skills").filter((entry) => statSync(join("skills", entry)).isDirectory()).sort();
-if (JSON.stringify(skillDirs) !== JSON.stringify(expectedSkills)) fail(`非预期的 skills: ${skillDirs.join(", ")}`);
-for (const skill of expectedSkills) {
-	const path = join("skills", skill, "SKILL.md");
-	const { name = "", description = "" } = parseFrontmatter(path);
-	if (name !== skill || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || name.length > 64) fail(`无效的 skill name: ${path}`);
-	if (!description || description.length > 1024) fail(`无效的 skill description: ${path}`);
 }
 
 const dirtyExtensionFiles = readdirSync(join("extensions", "dirty-repo-guard")).sort();

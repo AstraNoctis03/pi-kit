@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import { PassThrough, Writable } from "node:stream";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -83,12 +83,21 @@ try {
 	const keybindings = KeybindingsManager.create();
 	tui.setKeybindings(keybindings);
 	const manifest = JSON.parse(readFileSync(path.join(project, "package.json"), "utf8"));
+	assert.equal(manifest.pi.skills, undefined, "The package no longer bundles skills");
+	// Preserve the generic SSH skill boundary tests without shipping user skills.
+	const fixtureSkills = ["fixture-alpha", "fixture-beta"];
+	const skillDir = path.join(root, "skill-fixtures");
+	for (const name of fixtureSkills) {
+		const directory = path.join(skillDir, name);
+		mkdirSync(directory, { recursive: true });
+		writeFileSync(path.join(directory, "SKILL.md"), `---\nname: ${name}\ndescription: Integration test fixture\n---\n# Fixture skill\n`);
+	}
 	const settingsManager = SettingsManager.inMemory({ cacheWarming: "off" });
 	const loader = new DefaultResourceLoader({
 		cwd: root, agentDir: root, settingsManager,
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
 		additionalExtensionPaths: manifest.pi.extensions.map((file) => path.resolve(project, file)),
-		additionalSkillPaths: [path.join(project, "skills")],
+		additionalSkillPaths: [skillDir],
 	});
 	await loader.reload();
 	assert.deepEqual(loader.getExtensions().errors, []);
@@ -118,10 +127,11 @@ try {
 		return options;
 	}
 	const prompt = await emitStart();
-	assert.equal(prompt.skills.length, 2);
+	assert.deepEqual(prompt.skills.map((skill) => skill.name).sort(), fixtureSkills);
 	let runner = session.extensionRunner;
 	function checkCompactRenderer() {
 		if (typeof runner.resolveToolRenderers !== "function") {
+			assert.equal(runner.getToolDefinition("exa_search").renderShell, undefined, "Old hosts retain native Exa presentation");
 			for (const [name, factory] of [["bash", host.createBashToolDefinition], ["read", host.createReadToolDefinition], ["edit", host.createEditToolDefinition], ["write", host.createWriteToolDefinition]]) {
 				const native = factory(root);
 				const tool = runner.getToolDefinition(name);
@@ -193,7 +203,7 @@ try {
 			const component = new host.ToolExecutionComponent(name, `render-${name}`, args, { outputPad: 1 }, renderers, { requestRender() {} }, root);
 			component.markExecutionStarted(); component.setArgsComplete();
 			const text = () => tui.stripTerminalSequences(component.render(90).join("\n"));
-			assert.match(text(), name === "read" ? /◌ Read.*L7–26.*读取中/ : name === "write" ? /◌ Write.*写入中/ : /◌ Edit.*编辑中/);
+			assert.match(text(), name === "read" ? /◌ Read.*L7–26.*读取中/ : name === "write" ? /◌ Write.*处理中/ : /◌ Edit.*编辑中/);
 			assert.doesNotMatch(text(), /PLANNED_|WRITE_FIRST/);
 			const details = name === "edit" ? Object.freeze(host.generateDiffString("const ACTUAL_OLD = 1;\nkeep\n", "const ACTUAL_NEW = 2;\nkeep\n")) : undefined;
 			const data = Object.freeze({ content: Object.freeze([Object.freeze({ type: "text", text: name === "read" ? "READ_FIRST\nrow-2\nrow-3\nREAD_LAST" : name === "write" ? "OPAQUE_WRITE_ACK" : "Successfully replaced text." })]), details, isError: false, durationMs: 45 });
@@ -235,6 +245,88 @@ try {
 		assert.equal(commands.length, before, "Read/edit/write renderers must not call SSH or run commands");
 	}
 	checkCompactRenderer();
+	async function checkExaRenderer() {
+		if (typeof runner.resolveToolRenderers !== "function") return;
+		const base = runner.getToolDefinition("exa_search");
+		const originalExecute = base.execute;
+		const renderers = runner.resolveToolRenderers("exa_search", () => base);
+		assert.equal(renderers.renderShell, "self");
+		assert.deepEqual(Object.keys(renderers).sort(), ["renderCall", "renderResult", "renderShell"]);
+		const args = Object.freeze({ query: "Exa display fixture", includeDomains: Object.freeze(["example.com"]) });
+		const originalFetch = globalThis.fetch;
+		const key = process.env.EXA_API_KEY;
+		let requests = 0;
+		const beforeCommands = commands.length;
+		try {
+			process.env.EXA_API_KEY = "fixture-exa-key";
+			globalThis.fetch = async (url, init) => {
+				assert.equal(url, "https://api.exa.ai/search");
+				assert.equal(JSON.parse(init.body).query, args.query);
+				requests++;
+				return new Response(JSON.stringify({ results: Array.from({ length: 5 }, (_, index) => ({ title: `SEARCH_ENTRY_${index}`, url: `https://example.com/${index}`, highlights: [`SOURCE_DETAIL_${index}`] })), costDollars: { total: 0.007 } }), { status: 200 });
+			};
+			const data = await execute("exa_search", args);
+			const snapshot = JSON.stringify(data);
+			const component = new host.ToolExecutionComponent("exa_search", "render-exa", args, {}, renderers, { requestRender() {} }, root);
+			component.setArgsComplete(); component.markExecutionStarted();
+			const text = () => tui.stripTerminalSequences(component.render(100).join("\n"));
+			assert.match(text(), /◌ Exa Search.*搜索中/);
+			component.updateResult({ ...data, isError: false, durationMs: 234 });
+			assert.match(text(), /✓ Exa Search.*234ms/); assert.match(text(), /5 条结果.*\$0\.0070/);
+			assert.match(text(), /SEARCH_ENTRY_2/); assert.doesNotMatch(text(), /SEARCH_ENTRY_3|SOURCE_DETAIL_/);
+			assert.equal(text().match(/ctrl\+o/g)?.length, 1);
+			component.setExpanded(true); assert.match(text(), /SOURCE_DETAIL_4/); assert.match(text(), /includeDomains/);
+			component.setExpanded(false); component.render(100);
+			assert.equal(component.handleMouse({ type: "click", button: "left", x: 2, y: 1, width: 100, height: component.render(100).length })?.handled, true);
+			assert.match(text(), /SOURCE_DETAIL_4/);
+			component.setExpanded(false);
+			component.updateResult({ content: [{ type: "text", text: "REAL_SEARCH_ERROR\n\n\nExa Search failed (429): rate limit" }], isError: true });
+			assert.match(text(), /✗ Exa Search/); assert.match(text(), /REAL_SEARCH_ERROR/); assert.match(text(), /429/);
+			for (const width of [1, 2, 8, 30, 100]) for (const line of component.render(width)) assert.ok(tui.visibleWidth(line) <= width);
+			assert.doesNotMatch(component.render(100).join(""), /\x1b\[48[;:]/);
+			assert.equal(JSON.stringify(data), snapshot);
+			assert.equal(base.execute, originalExecute); assert.equal(requests, 1);
+			assert.equal(commands.length, beforeCommands);
+		} finally {
+			globalThis.fetch = originalFetch;
+			if (key === undefined) delete process.env.EXA_API_KEY; else process.env.EXA_API_KEY = key;
+		}
+	}
+	async function checkConfirmationUI() {
+		const beforeBinding = commands.length;
+		let approve = false;
+		let displayed = 0;
+		await session.bindExtensions({ mode: "tui", onError: (error) => errors.push(error), uiContext: {
+			theme, notify() {}, setStatus() {}, setTitle() {}, setFooter() {},
+			custom(factory) {
+				return new Promise((done) => {
+					const component = factory({ requestRender() {} }, theme, keybindings, done);
+					component.focused = true;
+					const text = tui.stripTerminalSequences(component.render(120).join("\n"));
+					assert.match(text, /安全确认/); assert.match(text, /npm install/); assert.match(text, /^\s*→ 确认\s*$/m);
+					displayed++;
+					if (approve) component.handleInput("\r");
+					else {
+						component.handleInput("\x1b[B"); component.handleInput("\t");
+						for (const character of "UI_REJECT_FEEDBACK") component.handleInput(character);
+						component.handleInput("\r");
+					}
+				});
+			},
+		} });
+		assert.ok(commands.slice(beforeBinding).every((command) => command.includes("remote_hostname=")), "Rebinding UI may re-probe the simulated environment, never run the fixture command");
+		const before = commands.length;
+		try {
+			// Exercise the permission decision only. Never execute the install fixture.
+			const event = { type: "tool_call", toolName: "bash", toolCallId: "confirmation-preview", input: { command: "npm install" } };
+			const rejected = await runner.emitToolCall(event);
+			assert.equal(rejected.block, true); assert.match(rejected.reason, /UI_REJECT_FEEDBACK/);
+			approve = true; assert.equal(await runner.emitToolCall(event), undefined);
+			assert.equal(displayed, 2); assert.equal(commands.length, before);
+		} finally { await session.bindExtensions({ mode: "print", onError: (error) => errors.push(error) }); }
+	}
+	await checkExaRenderer();
+	await checkConfirmationUI();
 	async function execute(name, input) {
 		assert.equal(await runner.emitToolCall({ type: "tool_call", toolName: name, toolCallId: `integration-${name}`, input }), undefined);
 		return runner.getToolDefinition(name).execute(`integration-${name}`, input, undefined, undefined, runner.createContext());
@@ -315,6 +407,8 @@ try {
 	assert.equal(evidence().runs[0].revision, evidence().revision);
 	await session.reload(); runner = session.extensionRunner;
 	checkCompactRenderer();
+	await checkExaRenderer();
+	await checkConfirmationUI();
 	assert.ok(evidence().runs[0].revision < evidence().revision, "Reload retains evidence, but cannot restore the verified files");
 	await session.prompt("/verify add npm install"); seedCaller();
 	const beforeBlocked = commands.length;
@@ -378,7 +472,7 @@ try {
 	assert.deepEqual(errors, []);
 	assert.equal(readFileSync(parent.getSessionFile(), "utf8"), beforeParent);
 	assert.equal(readFileSync(child.getSessionFile(), "utf8"), beforeChild);
-	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/atomic-write/verification/archive/reload verified; Bash/read/edit/write UI: ${typeof runner.resolveToolRenderers === "function" ? "compact" : "native fallback"} (SSH simulated)`);
+	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/atomic-write/verification/archive/reload verified; confirmations verified; Bash/read/edit/write/Exa UI: ${typeof runner.resolveToolRenderers === "function" ? "compact" : "native fallback"} (SSH simulated)`);
 } finally {
 	session?.dispose();
 	cp.spawn = originalSpawn; syncBuiltinESMExports();

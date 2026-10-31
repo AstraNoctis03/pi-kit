@@ -9,6 +9,7 @@ import compactTools from "../extensions/compact-tools/index.ts";
 import { displayText } from "../extensions/compact-tools/ansi.ts";
 import { bashRenderers } from "../extensions/compact-tools/renderers.ts";
 import { editRenderers, readRenderers, writeRenderers } from "../extensions/compact-tools/file-renderers.ts";
+import { exaRenderers } from "../extensions/compact-tools/exa-renderers.ts";
 
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { KeybindingsManager } = await import(new URL("./core/keybindings.js", entry));
@@ -110,6 +111,7 @@ const native = Object.freeze({ renderShell: "default" });
 assert.equal(resolver("read", () => native), readRenderers);
 assert.equal(resolver("edit", () => native), editRenderers);
 assert.equal(resolver("write", () => native), writeRenderers);
+assert.equal(resolver("exa_search", () => native), exaRenderers);
 for (const tool of ["grep", "powershell", "mcp__fixture"]) assert.equal(resolver(tool, () => native), native);
 assert.deepEqual(Object.keys(bashRenderers).sort(), ["renderCall", "renderResult", "renderShell"]);
 assert.doesNotThrow(() => compactTools({ registerTool() { assert.fail("Old hosts must retain native tools"); } }));
@@ -215,3 +217,5 @@ if (process.argv.includes("--preview")) {
 }
 console.log("test:compact-tools ok (display-only, safe ANSI, streaming states, expansion, widths and themes)");
 await import("./test-file-tools.mjs");
+await import("./test-exa-ui.mjs");
+await import("./test-confirmation-ui.mjs");

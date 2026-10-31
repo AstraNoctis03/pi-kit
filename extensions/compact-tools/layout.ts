@@ -1,3 +1,4 @@
+import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
 export interface ViewContext {
@@ -11,6 +12,12 @@ export interface ViewContext {
 	isError: boolean;
 	durationMs?: number;
 	outputPad?: number;
+}
+
+export interface ToolRenderers {
+	renderShell: "self";
+	renderCall(args: unknown, theme: Theme, context: ViewContext): Component;
+	renderResult(result: AgentToolResult<unknown>, options: ToolRenderResultOptions, theme: Theme, context: ViewContext): Component;
 }
 
 export const RESET = "\x1b[0m";

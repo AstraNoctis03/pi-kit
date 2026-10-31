@@ -133,8 +133,8 @@ const safetyDialog = new SafetyDialog(
 	(result) => { safetyDialogResult = result; },
 );
 const safetyDialogOutput = safetyDialog.render(80).join("\n");
-assert.match(safetyDialogOutput, /\[bold\]→ Yes\[\/\]/, "The default selection should have non-color emphasis");
-assert.match(safetyDialogOutput, /\[muted\]↑↓ choose/, "Safety shortcuts should remain readable");
+assert.match(safetyDialogOutput, /\[bold\]→ 确认\[\/\]/, "The default selection should have non-color emphasis");
+assert.match(safetyDialogOutput, /\[muted\].*选择/, "Safety shortcuts should remain readable");
 safetyDialog.handleInput("\r");
 assert.deepEqual(safetyDialogResult, { allowed: true }, "The shared confirmation must default to Yes");
 

@@ -1,12 +1,15 @@
-import { DynamicBorder, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, keyText, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import {
+	Box,
 	Container,
 	type Focusable,
 	Input,
 	matchesKey,
 	type SelectItem,
 	SelectList,
+	Spacer,
 	Text,
+	truncateToWidth,
 	type TUI,
 } from "@earendil-works/pi-tui";
 import {
@@ -15,6 +18,19 @@ import {
 	paintConfirmationColor,
 	type ConfirmationColors,
 } from "./dialog-colors.ts";
+
+// Approval text must expose control-sequence payloads, not silently discard
+// them: a hidden OSC body could contain shell operators the user must inspect.
+function confirmationText(text: string): string {
+	return text.replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u061c\u200e-\u200f\u202a-\u202e\u2066-\u2069]/g, (character) => {
+		const code = character.charCodeAt(0);
+		return code <= 0xff ? `\\x${code.toString(16).padStart(2, "0")}` : `\\u${code.toString(16).padStart(4, "0")}`;
+	});
+}
+
+export interface ConfirmationOptions {
+	allowFeedback?: boolean;
+}
 
 export interface SafetyConfirmationResult {
 	allowed: boolean;
@@ -36,6 +52,7 @@ export class SafetyDialog implements Focusable {
 	private readonly subject: string;
 	private readonly done: (result: SafetyConfirmationResult) => void;
 	private readonly colors: ConfirmationColors;
+	private readonly allowFeedback: boolean;
 	private mode: "select" | "input" = "select";
 	private _focused = false;
 
@@ -55,6 +72,7 @@ export class SafetyDialog implements Focusable {
 		subject: string,
 		done: (result: SafetyConfirmationResult) => void,
 		colors: ConfirmationColors = DEFAULT_CONFIRMATION_COLORS,
+		options: ConfirmationOptions = {},
 	) {
 		this.tui = tui;
 		this.theme = theme;
@@ -63,9 +81,10 @@ export class SafetyDialog implements Focusable {
 		this.subject = subject;
 		this.done = done;
 		this.colors = colors;
+		this.allowFeedback = options.allowFeedback !== false;
 		const items: SelectItem[] = [
-			{ value: YES, label: "Yes" },
-			{ value: NO, label: "No" },
+			{ value: YES, label: "确认" },
+			{ value: NO, label: "取消" },
 		];
 		this.list = new SelectList(items, items.length, {
 			selectedPrefix: (text) => paintConfirmationColor(theme, colors.selected, theme.bold(text)),
@@ -97,7 +116,7 @@ export class SafetyDialog implements Focusable {
 			this.tui.requestRender();
 			return;
 		}
-		if (matchesKey(data, "tab") && this.list.getSelectedItem()?.value === NO) {
+		if (this.allowFeedback && matchesKey(data, "tab") && this.list.getSelectedItem()?.value === NO) {
 			this.mode = "input";
 			this.input.focused = this.focused;
 			this.rebuild();
@@ -109,7 +128,9 @@ export class SafetyDialog implements Focusable {
 	}
 
 	render(width: number): string[] {
-		return this.container.render(width);
+		if (width < 1) return [];
+		const panelWidth = Math.min(width, 88);
+		return this.container.render(panelWidth).map((line) => truncateToWidth(line, panelWidth, "…"));
 	}
 
 	invalidate(): void {
@@ -120,33 +141,45 @@ export class SafetyDialog implements Focusable {
 	private rebuild(): void {
 		const border = () => new DynamicBorder((text: string) =>
 			paintConfirmationColor(this.theme, this.colors.border, text));
+		const titles = new Map([
+			["Safety confirmation", "安全确认"],
+			["Sensitive path confirmation", "敏感路径确认"],
+			["Uncommitted changes", "未提交的改动"],
+		]);
 		const separatorIndex = this.subject.indexOf(": ");
-		const label = separatorIndex > 0 ? this.subject.slice(0, separatorIndex) : "Operation";
+		const rawLabel = separatorIndex > 0 ? this.subject.slice(0, separatorIndex) : "Operation";
+		const label = new Map([["Command", "命令"], ["Path", "路径"], ["Action", "操作"], ["Operation", "操作"]]).get(rawLabel) ?? rawLabel;
 		const value = separatorIndex > 0 ? this.subject.slice(separatorIndex + 2) : this.subject;
+		const key = (action: Parameters<typeof keyText>[0]) => keyText(action) || "未绑定";
 
 		this.container.clear();
 		this.container.addChild(border());
 		this.container.addChild(new Text(
-			paintConfirmationColor(this.theme, this.colors.title, this.theme.bold(this.title)),
+			paintConfirmationColor(this.theme, this.colors.title, this.theme.bold("⚠ " + confirmationText(titles.get(this.title) ?? this.title))),
 			1,
 			0,
 		));
-		this.container.addChild(new Text(this.theme.fg("text", this.reason), 1, 1));
-		this.container.addChild(new Text(this.theme.fg("muted", label), 1, 0));
-		this.container.addChild(new Text(this.theme.fg("text", value), 1, 1));
-
-		if (this.mode === "select") {
-			this.container.addChild(this.list);
-			const canExplain = this.list.getSelectedItem()?.value === NO;
-			const help = canExplain
-				? "↑↓ choose  •  enter confirm  •  tab explain  •  esc reject"
-				: "↑↓ choose  •  enter confirm  •  esc reject";
-			this.container.addChild(new Text(this.theme.fg("muted", help), 1, 1));
-		} else {
-			this.container.addChild(new Text(this.theme.fg("muted", "Tell what's wrong"), 1, 0));
-			this.container.addChild(this.input);
-			this.container.addChild(new Text(this.theme.fg("muted", "enter submit  •  esc back"), 1, 1));
+		this.container.addChild(new Text(this.theme.fg("text", confirmationText(this.reason)), 1, 0));
+		if (this.subject) {
+			this.container.addChild(new Spacer(1));
+			this.container.addChild(new Text(this.theme.fg("muted", confirmationText(label)), 1, 0));
+			// Wrap the entire operation, never replace it with a shortened summary.
+			this.container.addChild(new Text(this.theme.fg("text", confirmationText(value)), 1, 0));
 		}
+		this.container.addChild(new Spacer(1));
+		const controls = new Box(1, 0);
+		if (this.mode === "select") {
+			controls.addChild(this.list);
+			const canExplain = this.allowFeedback && this.list.getSelectedItem()?.value === NO;
+			const help = `${key("tui.select.up")}/${key("tui.select.down")} 选择 · ${key("tui.select.confirm")} 确认 · ${key("tui.select.cancel")} 取消`
+				+ (canExplain ? " · tab 补充原因" : "");
+			controls.addChild(new Text(this.theme.fg("muted", help), 0, 0));
+		} else {
+			controls.addChild(new Text(this.theme.fg("muted", "补充拒绝原因（可留空）"), 0, 0));
+			controls.addChild(this.input);
+			controls.addChild(new Text(this.theme.fg("muted", `${key("tui.input.submit")} 拒绝并提交 · ${key("tui.select.cancel")} 返回`), 0, 0));
+		}
+		this.container.addChild(controls);
 		this.container.addChild(border());
 	}
 }
@@ -156,10 +189,11 @@ export async function showThemedConfirmation(
 	title: string,
 	reason: string,
 	subject: string,
+	options: ConfirmationOptions = {},
 ): Promise<SafetyConfirmationResult> {
 	if (!ctx.hasUI) return { allowed: false };
 	if (ctx.mode !== "tui") {
-		const allowed = await ctx.ui.confirm(title, `${reason}\n\n${subject}`);
+		const allowed = await ctx.ui.confirm(title, subject ? `${reason}\n\n${subject}` : reason);
 		return { allowed };
 	}
 
@@ -170,7 +204,7 @@ export async function showThemedConfirmation(
 	}
 	if (!loaded.error) reportedColorError = undefined;
 	return ctx.ui.custom<SafetyConfirmationResult>((tui, theme, _keybindings, done) =>
-		new SafetyDialog(tui, theme, title, reason, subject, done, loaded.colors));
+		new SafetyDialog(tui, theme, title, reason, subject, done, loaded.colors, options));
 }
 
 export function showSafetyConfirmation(

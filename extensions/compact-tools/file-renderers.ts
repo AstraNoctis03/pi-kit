@@ -1,15 +1,10 @@
 import { getLanguageFromPath, highlightCode, keyHint, renderDiff } from "@earendil-works/pi-coding-agent";
-import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getImageDimensions, imageFallback, sliceByColumn, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import { displayText } from "./ansi.ts";
-import { dimensions, duration, record, RESET, type ViewContext } from "./layout.ts";
+import { dimensions, duration, record, RESET, type ToolRenderers, type ViewContext } from "./layout.ts";
 
 type Kind = "read" | "edit" | "write";
-export interface FileRenderers {
-	renderShell: "self";
-	renderCall(args: unknown, theme: Theme, context: ViewContext): Component;
-	renderResult(result: AgentToolResult<unknown>, options: ToolRenderResultOptions, theme: Theme, context: ViewContext): Component;
-}
 
 function filePath(args: unknown): string {
 	const value = record(args)?.path ?? record(args)?.file_path;
@@ -34,7 +29,8 @@ function requestedRange(args: unknown): string {
 function titleParts(kind: Kind, args: unknown, context: ViewContext, width: number) {
 	const path = filePath(args);
 	const label = { read: "Read", edit: "Edit", write: "Write" }[kind];
-	const phase = context.isPartial ? context.executionStarted ? { read: "读取中", edit: "编辑中", write: "写入中" }[kind] : "准备中" : duration(context.durationMs);
+	// Host-started includes approval hooks, not necessarily Write file I/O.
+	const phase = context.isPartial ? context.executionStarted ? { read: "读取中", edit: "编辑中", write: "处理中" }[kind] : "准备中" : duration(context.durationMs);
 	const metadata = [kind === "read" ? requestedRange(args) : "", phase].filter(Boolean).join(" · ");
 	const { room } = dimensions(width, context);
 	const meta = metadata && room >= visibleWidth(label) + visibleWidth(metadata) + 7 ? metadata : "";
@@ -181,7 +177,7 @@ class FileResultView implements Component {
 	}
 }
 
-function createFileRenderers(kind: Kind): FileRenderers {
+function createFileRenderers(kind: Kind): ToolRenderers {
 	return {
 		renderShell: "self",
 		renderCall(args, theme, context) {

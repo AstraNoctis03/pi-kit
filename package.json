@@ -34,9 +34,6 @@
     "typebox": "*"
   },
   "pi": {
-    "skills": [
-      "./skills"
-    ],
     "themes": [
       "./themes/pi-kit-tokyo-night.json"
     ],

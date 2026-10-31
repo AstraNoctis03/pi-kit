@@ -77,7 +77,7 @@ assert.equal(plain(written).match(/ctrl\+o/g)?.length, 1);
 const fullWrite = plain(frame(writeRenderers, writeArgs, writeData, { expanded: true }));
 assert.match(fullWrite, /fourth.*\n\s*\n.*last/);
 assert.ok(fullWrite.indexOf("OPAQUE_WRITE_ACK") > fullWrite.indexOf("last"));
-assert.match(plain(frame(writeRenderers, writeArgs, writeData, { isPartial: true })), /◌ Write.*写入中/);
+assert.match(plain(frame(writeRenderers, writeArgs, writeData, { isPartial: true })), /◌ Write.*处理中/);
 assert.doesNotMatch(plain(frame(writeRenderers, writeArgs, writeData, { isPartial: true })), /const first/);
 assert.match(plain(frame(writeRenderers, writeArgs, writeData, { isPartial: true, executionStarted: false })), /准备中/);
 assert.doesNotMatch(plain(frame(writeRenderers, writeArgs, output("WRITE_ERROR"), { isError: true, expanded: true })), /const first/);
