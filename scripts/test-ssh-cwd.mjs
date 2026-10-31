@@ -2,14 +2,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import sshRemote from "../extensions/ssh-remote/index.ts";
 import { RemotePathMapper } from "../extensions/ssh-remote/paths.ts";
 import { SshClient } from "../extensions/ssh-remote/transport.ts";
 
-const temp = mkdtempSync(path.join(tmpdir(), "pi-kit-cwd-"));
+// Keep the disposable skill beneath home so the home-alias regression is
+// exercised on Linux too, where the system temp directory is usually /tmp.
+const temp = mkdtempSync(path.join(homedir(), ".pi-kit-cwd-"));
 const originalRun = SshClient.prototype.run;
 const remoteCwd = "/srv/project with spaces";
 const remoteHome = "/home/fixture";
@@ -102,6 +104,7 @@ try {
 		}
 		const mapper = new RemotePathMapper(localCwd, remoteCwd, remoteHome);
 		const remoteSkillPath = mapper.toRemotePath(skillPath);
+		assert.ok(remoteSkillPath.startsWith(remoteHome + "/"), "The fixture must exercise the remote-home alias");
 		files.set(remoteSkillPath, "REMOTE SKILL CONTENT");
 		assert.equal((await tools.get("read").execute("remote-skill", { path: remoteSkillPath }, undefined, undefined, ctx)).content[0].text,
 			"REMOTE SKILL CONTENT", "Encoding a remote-home path must not accidentally grant the local skill exception");
