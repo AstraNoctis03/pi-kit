@@ -55,23 +55,23 @@ interface TextResult<T> {
 	details: T | undefined;
 }
 
-function createReadOperations(getSession: () => RemoteSession, localSkills?: LocalSkillInstructions): ReadOperations {
+function createReadOperations(getSession: () => RemoteSession, signal?: AbortSignal, localSkills?: LocalSkillInstructions): ReadOperations {
 	return {
 		readFile: async (filePath) => {
 			const { client, mapper } = getSession();
 			if (localSkills?.has(filePath)) return localSkills.readFile(filePath);
-			return (await client.run(`cat -- ${quoteShell(mapper.toRemotePath(filePath))}`)).stdout;
+			return (await client.run(`cat -- ${quoteShell(mapper.toRemotePath(filePath))}`, { signal })).stdout;
 		},
 		access: async (filePath) => {
 			const { client, mapper } = getSession();
 			if (localSkills?.has(filePath)) return localSkills.access(filePath);
-			await client.run(`test -r ${quoteShell(mapper.toRemotePath(filePath))}`);
+			await client.run(`test -r ${quoteShell(mapper.toRemotePath(filePath))}`, { signal });
 		},
 		detectImageMimeType: async (filePath) => {
 			try {
 				const { client, mapper } = getSession();
 				if (localSkills?.has(filePath)) return null; // Skill entry files are Markdown, not images.
-				const result = await client.run(`file --mime-type -b -- ${quoteShell(mapper.toRemotePath(filePath))}`);
+				const result = await client.run(`file --mime-type -b -- ${quoteShell(mapper.toRemotePath(filePath))}`, { signal });
 				const mime = result.stdout.toString("utf8").trim();
 				return ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"].includes(mime) ? mime : null;
 			} catch {
@@ -95,7 +95,7 @@ function createWriteOperations(getSession: () => RemoteSession, signal?: AbortSi
 }
 
 function createEditOperations(getSession: () => RemoteSession, signal?: AbortSignal): EditOperations {
-	const read = createReadOperations(getSession);
+	const read = createReadOperations(getSession, signal);
 	const write = createWriteOperations(getSession, signal);
 	return {
 		readFile: read.readFile,
@@ -366,8 +366,8 @@ async function executeRemoteGrep(
 }
 
 function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, toolCwd: string, localSkills: LocalSkillInstructions): void {
-	const read = createReadToolDefinition(toolCwd, { operations: createReadOperations(getSession) });
-	const skillRead = createReadToolDefinition(toolCwd, { operations: createReadOperations(getSession, localSkills) });
+	const readTool = (signal?: AbortSignal, skills?: LocalSkillInstructions) =>
+		createReadToolDefinition(toolCwd, { operations: createReadOperations(getSession, signal, skills) });
 	const writeTool = (signal?: AbortSignal) => createWriteToolDefinition(toolCwd, { operations: createWriteOperations(getSession, signal) });
 	const editTool = (signal?: AbortSignal) => createEditToolDefinition(toolCwd, { operations: createEditOperations(getSession, signal) });
 	const bash = createBashToolDefinition(toolCwd, { operations: createBashOperations(getSession) });
@@ -376,7 +376,7 @@ function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, 
 	const grep = createGrepTool(toolCwd);
 
 	pi.registerTool({
-		...read,
+		...readTool(),
 		async execute(id, params, signal, onUpdate, ctx) {
 			const localInput = params.path.trim().replace(/^@/, "");
 			const context = ctx && { ...ctx, cwd: toolCwd };
@@ -387,9 +387,9 @@ function registerRemoteTools(pi: ExtensionAPI, getSession: () => RemoteSession, 
 			const nativeAbsolute = path.isAbsolute(localInput)
 				&& (process.platform !== "win32" || !path.posix.isAbsolute(localInput));
 			if (nativeAbsolute && localSkills.has(localInput)) {
-				return skillRead.execute(id, { ...params, path: localInput }, signal, onUpdate, context);
+				return readTool(signal, localSkills).execute(id, { ...params, path: localInput }, signal, onUpdate, context);
 			}
-			return read.execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate, context);
+			return readTool(signal).execute(id, { ...params, path: getSession().mapper.toToolInput(params.path) }, signal, onUpdate, context);
 		},
 	});
 	pi.registerTool({

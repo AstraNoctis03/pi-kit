@@ -27,11 +27,36 @@ const remoteCwd = "/srv/project with spaces";
 const remoteHome = "/home/fixture";
 let session;
 let writeFault;
+let holdSsh = false;
+const heldSsh = [];
+let activeSsh = 0;
+let peakSsh = 0;
+const flushSsh = () => new Promise((resolve) => setImmediate(resolve));
+async function waitForFiveSsh() {
+	const deadline = Date.now() + 10_000;
+	while (heldSsh.length < 5) {
+		assert.ok(Date.now() < deadline, "The SDK never started five held SSH operations");
+		await flushSsh();
+	}
+	assert.equal(heldSsh.length, 5);
+}
+async function drainHeldSsh() {
+	holdSsh = false;
+	for (const complete of heldSsh.splice(0)) complete();
+	let stable = 0;
+	let previousCount = commands.length;
+	while (stable < 2) {
+		await flushSsh();
+		stable = activeSsh === 0 && commands.length === previousCount ? stable + 1 : 0;
+		previousCount = commands.length;
+	}
+}
 
 cp.spawn = function(binary, args, options) {
 	if (binary !== "ssh") return originalSpawn(binary, args, options);
 	const command = args.at(-1);
 	commands.push(command);
+	activeSsh++; peakSsh = Math.max(peakSsh, activeSsh);
 	const input = [];
 	const child = new EventEmitter();
 	child.stdout = new PassThrough();
@@ -39,7 +64,7 @@ cp.spawn = function(binary, args, options) {
 	child.stdin = new Writable({ write(chunk, _encoding, callback) { input.push(Buffer.from(chunk)); callback(); } });
 	let killed = false;
 	child.kill = () => { killed = true; return true; };
-	setImmediate(() => {
+	const complete = () => {
 		let text = "";
 		let error;
 		try {
@@ -66,8 +91,11 @@ cp.spawn = function(binary, args, options) {
 		} catch (caught) { error = caught; }
 		child.stdout.end(text);
 		child.stderr.end(error ? String(error) : "");
+		activeSsh--;
 		child.emit("close", error ? 1 : 0);
-	});
+	};
+	if (holdSsh) heldSsh.push(complete);
+	else setImmediate(complete);
 	return child;
 };
 syncBuiltinESMExports();
@@ -366,6 +394,43 @@ try {
 	let output = "";
 	await userBash.operations.exec("pwd", root, { onData(data) { output += data; } });
 	assert.equal(output, remoteCwd);
+	async function checkSshQueue() {
+		const read = runner.getToolDefinition("read");
+		const controller = new AbortController();
+		const before = commands.length;
+		holdSsh = true; peakSsh = 0;
+		const cancelled = Promise.allSettled(Array.from({ length: 20 }, (_, i) =>
+			read.execute(`queued-read-${i}`, { path: "notes.txt" }, controller.signal, undefined, runner.createContext())));
+		await waitForFiveSsh();
+		assert.equal(commands.length - before, 5, "The actual SDK must start at most five SSH operations");
+		controller.abort();
+		const results = await cancelled;
+		for (const result of results) {
+			assert.equal(result.status, "rejected"); assert.match(String(result.reason), /abort/i);
+		}
+		await drainHeldSsh();
+		assert.equal(commands.length - before, 5, "Cancelling read must remove queued SSH work, not only end the SDK promise");
+		assert.equal(peakSsh, 5);
+		holdSsh = true; peakSsh = 0;
+		const reads = Promise.all(Array.from({ length: 20 }, (_, i) =>
+			read.execute(`successful-read-${i}`, { path: "notes.txt" }, undefined, undefined, runner.createContext())));
+		await waitForFiveSsh();
+		await drainHeldSsh();
+		for (const result of await reads) assert.equal(result.content[0].text, "edited content\n");
+		assert.equal(peakSsh, 5); assert.equal(activeSsh, 0);
+
+		const write = runner.getToolDefinition("write");
+		const beforeWrites = commands.length;
+		holdSsh = true; peakSsh = 0;
+		const writes = Promise.all(Array.from({ length: 20 }, (_, i) => write.execute(`queued-write-${i}`,
+			Object.freeze({ path: `queue-${i}.txt`, content: `Exact submitted content ${i}\n` }), undefined, undefined, runner.createContext())));
+		await waitForFiveSsh();
+		await drainHeldSsh(); await writes;
+		assert.equal(peakSsh, 5); assert.equal(activeSsh, 0);
+		assert.equal(commands.slice(beforeWrites).filter((command) => command.includes("SSH atomic write:")).length, 20, "Each submitted write runs exactly once");
+		for (let i = 0; i < 20; i++) assert.equal(files.get(`${remoteCwd}/queue-${i}.txt`), `Exact submitted content ${i}\n`);
+	}
+	await checkSshQueue();
 	const beforeSkills = commands.length;
 	for (const skill of prompt.skills) assert.equal((await execute("read", { path: skill.filePath })).content[0].text, readFileSync(skill.filePath, "utf8"));
 	assert.equal(commands.length, beforeSkills, "Skill loading stays local even through host tool registration");
@@ -477,6 +542,7 @@ try {
 	assert.equal(readFileSync(child.getSessionFile(), "utf8"), beforeChild);
 	console.log(`test:pi-integration ok: Pi ${host.VERSION}; all extensions loaded, guards/cwd/skills/atomic-write/verification/archive/reload verified; confirmations verified; Bash/read/edit/write/Exa UI: ${typeof runner.resolveToolRenderers === "function" ? "compact" : "native fallback"} (SSH simulated)`);
 } finally {
+	await drainHeldSsh();
 	session?.dispose();
 	cp.spawn = originalSpawn; syncBuiltinESMExports();
 	if (savedEnv.agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = savedEnv.agentDir;

@@ -175,3 +175,4 @@ assert.equal((await sshToolGuard({ toolName: "powershell" }, mockContext)).block
 	"Valid SSH targets must also block local PowerShell without a live connection");
 
 console.log("test:ssh ok");
+await import("./test-ssh-transport.mjs");

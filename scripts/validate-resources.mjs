@@ -53,6 +53,7 @@ const requiredFiles = [
 	"scripts/test-ssh-skills.mjs",
 	"scripts/test-ssh-cwd.mjs",
 	"scripts/test-ssh-write.mjs",
+	"scripts/test-ssh-transport.mjs",
 	"scripts/test-pi-integration.mjs",
 	"themes/pi-kit-tokyo-night.json",
 ];
